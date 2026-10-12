@@ -1,0 +1,15 @@
+included:
+  - Sources
+
+excluded:
+  - .build
+
+only_rules:
+  - discarded_notification_center_observer
+  - duplicate_imports
+  - empty_count
+  - fatal_error_message
+  - force_cast
+  - force_try
+  - unowned_variable_capture
+  - weak_delegate
