@@ -149,7 +149,7 @@ struct SettingsView: View {
                     state: shortcutRecorder,
                     onRecorded: onShortcutRecorded
                 )
-                Text("The shortcut works from any app and does not require Accessibility permission.")
+                Text("Use your shortcut from any app.")
                     .font(.caption)
                     .foregroundStyle(Color.quickNotesSecondaryText)
             }

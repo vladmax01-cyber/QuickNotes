@@ -23,12 +23,7 @@ final class ShortcutRecorderState: ObservableObject {
                 return nil
             }
             guard let definition = ShortcutFactory.definition(from: event) else {
-                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                if modifiers.contains(.function) {
-                    self.validationMessage = "macOS reserves fn-only shortcuts such as fn + N. Use Control, Option, or Command."
-                } else {
-                    self.validationMessage = "Add Control, Option, or Command to the shortcut."
-                }
+                self.validationMessage = "Add Control, Option, or Command to the shortcut."
                 NSSound.beep()
                 return nil
             }
@@ -104,7 +99,7 @@ struct ShortcutRecorderView: View {
             } else {
                 Text(state.isRecording
                      ? "Press Escape to cancel."
-                     : "Use Control, Option, or Command with another key. macOS uses fn + N for Notification Center.")
+                     : "Use Control, Option, or Command with another key.")
                     .font(.caption)
                     .foregroundStyle(Color.quickNotesSecondaryText)
             }
