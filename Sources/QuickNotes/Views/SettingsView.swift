@@ -403,6 +403,13 @@ struct SettingsView: View {
                     "Show formatting controls when the note is wide",
                     isOn: $preferences.showFormattingToolbarWhenWide
                 )
+                Toggle(
+                    "Use accent color for format controls",
+                    isOn: $preferences.formatControlsUseAccent
+                )
+                .help(
+                    "Colors the format buttons in the wide toolbar and Aa menu. Selected buttons stay highlighted."
+                )
                 Text("Command-click a toolbar icon to move it right. Command-Shift-click moves it left.")
                     .font(.caption)
                     .foregroundStyle(Color.quickNotesSecondaryText)

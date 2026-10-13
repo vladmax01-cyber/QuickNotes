@@ -184,6 +184,7 @@ enum ModelSmoke {
 
         preferences.windowTransparency = 0.87
         preferences.showFormattingToolbarWhenWide = false
+        preferences.formatControlsUseAccent = true
         preferences.hapticFeedbackEnabled = false
         preferences.customAccentBrightness = 0.58
         preferences.fontSizeControlStyle = .classic
@@ -193,6 +194,7 @@ enum ModelSmoke {
         let appearancePreferences = AppPreferences(defaults: shortcutDefaults)
         guard abs(appearancePreferences.windowTransparency - 0.87) < 0.001,
               appearancePreferences.showFormattingToolbarWhenWide == false,
+              appearancePreferences.formatControlsUseAccent,
               !appearancePreferences.hapticFeedbackEnabled,
               abs(appearancePreferences.customAccentBrightness - 0.58) < 0.001,
               appearancePreferences.fontSizeControlStyle == .classic,

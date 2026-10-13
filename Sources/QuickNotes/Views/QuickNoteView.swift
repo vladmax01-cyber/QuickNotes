@@ -218,7 +218,8 @@ struct QuickNoteView: View {
                         .padding(.horizontal, 1)
                     InlineFormatButton(label: "Bold", text: "B",
                                        isActive: editorController.formattingState.bold,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction(editorController.toggleBold)
                     }
                     .transition(inlineControlTransition)
@@ -226,7 +227,8 @@ struct QuickNoteView: View {
                 if expandedCount > 1 {
                     InlineFormatButton(label: "Italic", text: "I",
                                        isActive: editorController.formattingState.italic,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction(editorController.toggleItalic)
                     }
                     .transition(inlineControlTransition)
@@ -234,7 +236,8 @@ struct QuickNoteView: View {
                 if expandedCount > 2 {
                     InlineFormatButton(label: "Underline", text: "U",
                                        isActive: editorController.formattingState.underline,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction(editorController.toggleUnderline)
                     }
                     .transition(inlineControlTransition)
@@ -242,7 +245,8 @@ struct QuickNoteView: View {
                 if expandedCount > 3 {
                     InlineFormatButton(label: "Checklist", symbol: "checklist",
                                        isActive: editorController.formattingState.listStyle == .checklist,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction { editorController.applyList(.checklist) }
                     }
                     .transition(inlineControlTransition)
@@ -250,7 +254,8 @@ struct QuickNoteView: View {
                 if expandedCount > 4 {
                     InlineFormatButton(label: "Bulleted List", symbol: "list.bullet",
                                        isActive: editorController.formattingState.listStyle == .bulleted,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction { editorController.applyList(.bulleted) }
                     }
                     .transition(inlineControlTransition)
@@ -258,7 +263,8 @@ struct QuickNoteView: View {
                 if expandedCount > 5 {
                     InlineFormatButton(label: "Numbered List", symbol: "list.number",
                                        isActive: editorController.formattingState.listStyle == .numbered,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction { editorController.applyList(.numbered) }
                     }
                     .transition(inlineControlTransition)
@@ -266,7 +272,8 @@ struct QuickNoteView: View {
                 if expandedCount > 6 {
                     InlineFormatButton(label: "Strikethrough", text: "S",
                                        isActive: editorController.formattingState.strikethrough,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction(editorController.toggleStrikethrough)
                     }
                     .transition(inlineControlTransition)
@@ -274,7 +281,8 @@ struct QuickNoteView: View {
                 if expandedCount > 7 {
                     InlineFormatButton(label: "Highlight", symbol: "highlighter",
                                        isActive: editorController.formattingState.highlight,
-                                       accent: preferences.accentColor) {
+                                       accent: preferences.accentColor,
+                                       inactiveColor: formatControlColor) {
                         performFormatAction(editorController.toggleHighlight)
                     }
                     .transition(inlineControlTransition)
@@ -501,6 +509,10 @@ struct QuickNoteView: View {
         preferences.toolbarUsesAccent ? preferences.accentColor : .primary
     }
 
+    private var formatControlColor: Color {
+        preferences.formatControlsUseAccent ? preferences.accentColor : .primary
+    }
+
     private func performFormatAction(_ action: () -> Void) {
         action()
         editorController.refreshFormattingState()
@@ -704,32 +716,37 @@ private struct InlineFormatButton: View {
     let symbol: String?
     let isActive: Bool
     let accent: Color
+    let inactiveColor: Color
     let action: () -> Void
 
-    init(label: String, text: String, isActive: Bool, accent: Color,
+    init(label: String, text: String, isActive: Bool, accent: Color, inactiveColor: Color,
          action: @escaping () -> Void) {
         self.label = label
         self.text = text
         symbol = nil
         self.isActive = isActive
         self.accent = accent
+        self.inactiveColor = inactiveColor
         self.action = action
     }
 
-    init(label: String, symbol: String, isActive: Bool, accent: Color,
+    init(label: String, symbol: String, isActive: Bool, accent: Color, inactiveColor: Color,
          action: @escaping () -> Void) {
         self.label = label
         text = nil
         self.symbol = symbol
         self.isActive = isActive
         self.accent = accent
+        self.inactiveColor = inactiveColor
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
             Group {
-                if let symbol {
+                if label == "Strikethrough" {
+                    StrikethroughGlyph(color: isActive ? accent : inactiveColor)
+                } else if let symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 14, weight: .semibold))
                 } else if let text {
@@ -737,10 +754,9 @@ private struct InlineFormatButton: View {
                         .font(.system(size: 15, weight: label == "Bold" ? .bold : .semibold))
                         .italic(label == "Italic")
                         .underline(label == "Underline")
-                        .strikethrough(label == "Strikethrough")
                 }
             }
-            .foregroundStyle(Color.primary)
+            .foregroundStyle(isActive ? accent : inactiveColor)
             .frame(width: 27, height: 27)
         }
         .buttonStyle(InlineFormatButtonStyle(accent: accent, isActive: isActive))
@@ -749,6 +765,23 @@ private struct InlineFormatButton: View {
         .accessibilityValue(isActive ? "On" : "Off")
         .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                    ? nil : .easeOut(duration: 0.14), value: isActive)
+    }
+}
+
+private struct StrikethroughGlyph: View {
+    let color: Color
+
+    var body: some View {
+        Text("S")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(color)
+            .overlay {
+                Capsule()
+                    .fill(color)
+                    .frame(width: 20, height: 1)
+                    .offset(y: -0.5)
+            }
+            .accessibilityHidden(true)
     }
 }
 
@@ -772,6 +805,10 @@ private struct FormattingPalette: View {
     let onClose: () -> Void
     @ObservedObject var fontSizeInput: FontSizeInputModel
 
+    private var formatControlColor: Color {
+        preferences.formatControlsUseAccent ? preferences.accentColor : .primary
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -789,28 +826,32 @@ private struct FormattingPalette: View {
                 HStack(spacing: 6) {
                     PaletteFormatButton(label: "Bold", text: "B", font: .headline,
                                         isActive: controller.formattingState.bold,
-                                        accent: preferences.accentColor) {
+                                        accent: preferences.accentColor,
+                                        inactiveColor: formatControlColor) {
                         apply(controller.toggleBold)
                     }
                     PaletteFormatButton(label: "Italic", text: "I", font: .headline.italic(),
                                         isActive: controller.formattingState.italic,
-                                        accent: preferences.accentColor) {
+                                        accent: preferences.accentColor,
+                                        inactiveColor: formatControlColor) {
                         apply(controller.toggleItalic)
                     }
                     PaletteFormatButton(label: "Underline", text: "U", font: .headline,
                                         underline: true, isActive: controller.formattingState.underline,
-                                        accent: preferences.accentColor) {
+                                        accent: preferences.accentColor,
+                                        inactiveColor: formatControlColor) {
                         apply(controller.toggleUnderline)
                     }
                     PaletteFormatButton(label: "Strikethrough", text: "S", font: .headline,
-                                        strikethrough: true,
                                         isActive: controller.formattingState.strikethrough,
-                                        accent: preferences.accentColor) {
+                                        accent: preferences.accentColor,
+                                        inactiveColor: formatControlColor) {
                         apply(controller.toggleStrikethrough)
                     }
                     PaletteFormatButton(label: "Highlight", symbol: "highlighter",
                                         isActive: controller.formattingState.highlight,
-                                        accent: preferences.accentColor) {
+                                        accent: preferences.accentColor,
+                                        inactiveColor: formatControlColor) {
                         apply(controller.toggleHighlight)
                     }
                 }
@@ -1065,9 +1106,9 @@ private struct PaletteFormatButton: View {
     let symbol: String?
     let font: Font
     let underline: Bool
-    let strikethrough: Bool
     let isActive: Bool
     let accent: Color
+    let inactiveColor: Color
     let action: () -> Void
 
     init(
@@ -1075,9 +1116,9 @@ private struct PaletteFormatButton: View {
         text: String,
         font: Font,
         underline: Bool = false,
-        strikethrough: Bool = false,
         isActive: Bool,
         accent: Color,
+        inactiveColor: Color,
         action: @escaping () -> Void
     ) {
         self.label = label
@@ -1085,45 +1126,40 @@ private struct PaletteFormatButton: View {
         symbol = nil
         self.font = font
         self.underline = underline
-        self.strikethrough = strikethrough
         self.isActive = isActive
         self.accent = accent
+        self.inactiveColor = inactiveColor
         self.action = action
     }
 
-    init(label: String, symbol: String, isActive: Bool, accent: Color,
+    init(label: String, symbol: String, isActive: Bool, accent: Color, inactiveColor: Color,
          action: @escaping () -> Void) {
         self.label = label
         text = nil
         self.symbol = symbol
         font = .headline
         underline = false
-        strikethrough = false
         self.isActive = isActive
         self.accent = accent
+        self.inactiveColor = inactiveColor
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
             Group {
-                if let symbol {
+                if label == "Strikethrough" {
+                    StrikethroughGlyph(color: isActive ? accent : inactiveColor)
+                } else if let symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 14, weight: .semibold))
                 } else if let text {
                     Text(text)
                         .font(font)
                         .underline(underline)
-                        .overlay {
-                            if strikethrough {
-                                Capsule()
-                                    .fill(isActive ? accent : Color.primary)
-                                    .frame(width: 18, height: 1.5)
-                            }
-                        }
                 }
             }
-            .foregroundStyle(isActive ? accent : Color.primary)
+            .foregroundStyle(isActive ? accent : inactiveColor)
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         }

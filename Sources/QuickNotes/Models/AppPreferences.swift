@@ -81,6 +81,7 @@ final class AppPreferences: ObservableObject {
         static let useGlass = "useGlass"
         static let translucentCollapsedBar = "translucentCollapsedBar"
         static let toolbarUsesAccent = "toolbarUsesAccent"
+        static let formatControlsUseAccent = "formatControlsUseAccent"
         static let fontSizeControlStyle = "fontSizeControlStyle"
         static let showFormattingToolbarWhenWide = "showFormattingToolbarWhenWide"
         static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
@@ -116,6 +117,9 @@ final class AppPreferences: ObservableObject {
     }
     @Published var toolbarUsesAccent: Bool {
         didSet { save(toolbarUsesAccent, key: Key.toolbarUsesAccent) }
+    }
+    @Published var formatControlsUseAccent: Bool {
+        didSet { save(formatControlsUseAccent, key: Key.formatControlsUseAccent) }
     }
     @Published var fontSizeControlStyle: FontSizeControlStyle {
         didSet { save(fontSizeControlStyle.rawValue, key: Key.fontSizeControlStyle) }
@@ -158,6 +162,7 @@ final class AppPreferences: ObservableObject {
             Key.useGlass: true,
             Key.translucentCollapsedBar: true,
             Key.toolbarUsesAccent: true,
+            Key.formatControlsUseAccent: false,
             Key.fontSizeControlStyle: FontSizeControlStyle.numeric.rawValue,
             Key.showFormattingToolbarWhenWide: true,
             Key.hapticFeedbackEnabled: true,
@@ -180,6 +185,7 @@ final class AppPreferences: ObservableObject {
         useGlass = defaults.bool(forKey: Key.useGlass)
         translucentCollapsedBar = defaults.bool(forKey: Key.translucentCollapsedBar)
         toolbarUsesAccent = defaults.bool(forKey: Key.toolbarUsesAccent)
+        formatControlsUseAccent = defaults.bool(forKey: Key.formatControlsUseAccent)
         fontSizeControlStyle = FontSizeControlStyle(
             rawValue: defaults.string(forKey: Key.fontSizeControlStyle) ?? ""
         ) ?? .numeric

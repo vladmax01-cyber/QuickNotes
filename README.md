@@ -18,11 +18,11 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
 - Drag an image out of a note or copy it as a PNG. Restore deleted notes from Recently Deleted in Settings, or empty the trash when you are ready.
 - Turn the New Note shortcut on or off and choose its key combination in Settings.
-- Follow your Mac's appearance automatically, or choose Light or Dark in Settings. Pick an accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
+- Follow your Mac's appearance automatically, or choose Light or Dark in Settings. Pick an accent you like and choose whether the format buttons use it. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
 
 ## Make it yours
 
-<img src="docs/screenshots/formatting.png" alt="The Quick Notes Aa formatting menu open beside a note with a title, mint highlight, italic text, and checklist" width="850">
+<img src="docs/screenshots/formatting-desktop.png" alt="The Quick Notes Aa formatting menu open beside a note with a title, mint highlight, italic text, and checklist" width="850">
 
 *Open Aa for text styles, highlighting, lists, alignment, and font size. The little reminder uses a title, mint highlight, italic text, and a checklist.*
 
@@ -47,7 +47,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 ## Install
 
-Download the [v2.1.6 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/download/v2.1.6/QuickNotes-2.1.6.dmg), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
+Download the [v2.1.7 DMG](https://github.com/vladmax01-cyber/QuickNotes/raw/refs/heads/main/downloads/QuickNotes-2.1.7.dmg), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
 
 The app is signed locally but has not been notarized by Apple. macOS may ask you to approve opening it in **System Settings → Privacy & Security**.
 
