@@ -636,6 +636,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
     func updateNSView(_ anchor: NSView, context: Context) {
         let coordinator = context.coordinator
         coordinator.isPresented = $isPresented
+        coordinator.anchorView = anchor
         if !isPresented {
             controller.setSelectionPreviewMode(false)
             coordinator.popover?.close()
@@ -646,7 +647,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
 
         if coordinator.popover == nil {
             let popover = NSPopover()
-            popover.behavior = .transient
+            popover.behavior = .semitransient
             popover.animates = false
             popover.delegate = coordinator
             coordinator.popover = popover
@@ -706,8 +707,10 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         weak var controller: RichTextEditorController?
         var popover: NSPopover?
         weak var noteWindow: NSWindow?
+        weak var anchorView: NSView?
         var paletteWidth: CGFloat = 266
         private var windowObservers: [NSObjectProtocol] = []
+        private var noteClickMonitor: Any?
 
         init(isPresented: Binding<Bool>, controller: RichTextEditorController) {
             self.isPresented = isPresented
@@ -716,11 +719,25 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
 
         deinit {
             removeWindowObservers()
+            removeNoteClickMonitor()
         }
 
         func popoverDidShow(_ notification: Notification) {
             alignPopover()
             guard let noteWindow else { return }
+            if noteClickMonitor == nil {
+                noteClickMonitor = NSEvent.addLocalMonitorForEvents(
+                    matching: [.leftMouseDown, .rightMouseDown]
+                ) { [weak self] event in
+                    guard let self, event.window === self.noteWindow else { return event }
+                    if let anchorView = self.anchorView,
+                       anchorView.bounds.contains(anchorView.convert(event.locationInWindow, from: nil)) {
+                        return event
+                    }
+                    self.isPresented.wrappedValue = false
+                    return event
+                }
+            }
             for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
                 windowObservers.append(NotificationCenter.default.addObserver(
                     forName: name, object: noteWindow, queue: .main
@@ -753,8 +770,14 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
             windowObservers.removeAll()
         }
 
+        private func removeNoteClickMonitor() {
+            if let noteClickMonitor { NSEvent.removeMonitor(noteClickMonitor) }
+            noteClickMonitor = nil
+        }
+
         func popoverDidClose(_ notification: Notification) {
             removeWindowObservers()
+            removeNoteClickMonitor()
             controller?.setSelectionPreviewMode(false)
             if isPresented.wrappedValue { isPresented.wrappedValue = false }
         }
