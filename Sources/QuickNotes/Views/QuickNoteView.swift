@@ -647,6 +647,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         if coordinator.popover == nil {
             let popover = NSPopover()
             popover.behavior = .transient
+            popover.animates = false
             popover.delegate = coordinator
             coordinator.popover = popover
         }
@@ -662,6 +663,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
             }
             let fontSizeInput = FontSizeInputModel()
             fontSizeInput.text = String(controller.currentFontSize)
+            let paletteSize = FormattingPalette.contentSize
             popover.contentViewController = NSHostingController(rootView: FormattingPalette(
                 controller: controller,
                 preferences: preferences,
@@ -671,18 +673,21 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
                 },
                 fontSizeInput: fontSizeInput
             ))
+            popover.contentSize = paletteSize
             let anchorRect = anchor.convert(anchor.bounds, to: contentView)
             let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
-            let paletteWidth: CGFloat = 266
             let openRight = FormattingPalettePlacement.side(
                 of: window.frame,
-                paletteWidth: paletteWidth,
+                paletteWidth: paletteSize.width,
                 in: screenFrame
             ) == .right
             coordinator.noteWindow = window
-            coordinator.paletteWidth = paletteWidth
+            coordinator.paletteWidth = paletteSize.width
+            // Compensate for the popover's shadow so its first frame has the final gap.
+            let anchorInset: CGFloat = 13
             let edgeRect = NSRect(
-                x: openRight ? contentView.bounds.maxX - 1 : contentView.bounds.minX,
+                x: openRight ? contentView.bounds.maxX - anchorInset
+                    : contentView.bounds.minX + anchorInset,
                 y: anchorRect.midY,
                 width: 1,
                 height: 1
@@ -692,6 +697,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
                 of: contentView,
                 preferredEdge: openRight ? .maxX : .minX
             )
+            coordinator.alignPopover()
         }
     }
 
@@ -843,6 +849,8 @@ private struct InlineFormatButtonStyle: ButtonStyle {
 }
 
 private struct FormattingPalette: View {
+    static let contentSize = NSSize(width: 266, height: 360)
+
     @ObservedObject var controller: RichTextEditorController
     @ObservedObject var preferences: AppPreferences
     let onClose: () -> Void
@@ -1000,7 +1008,7 @@ private struct FormattingPalette: View {
             }
             .padding(14)
         }
-        .frame(width: 266, height: 360)
+        .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(preferences.accentColor)
         .accessibilityLabel("Text Formatting Options")
