@@ -31,7 +31,7 @@ final class EscapeAwareTextView: NSTextView {
         isPastingText = true
         super.paste(sender)
         isPastingText = false
-        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
+        if let storage = textStorage { ListMarkerAppearance.normalize(in: storage) }
         resizeAttachmentsToFit()
     }
 
@@ -289,7 +289,7 @@ final class EscapeAwareTextView: NSTextView {
         isPastingText = true
         insertText(text, replacementRange: selectedRange())
         isPastingText = false
-        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
+        if let storage = textStorage { ListMarkerAppearance.normalize(in: storage) }
     }
 
     @objc func pastePlainText(_ sender: Any?) {
@@ -302,7 +302,7 @@ final class EscapeAwareTextView: NSTextView {
         isPastingText = true
         insertText(NSAttributedString(string: text, attributes: attributes), replacementRange: selectedRange())
         isPastingText = false
-        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
+        if let storage = textStorage { ListMarkerAppearance.normalize(in: storage) }
     }
 
     @objc func pasteClipboardImage(_ sender: Any?) {
@@ -363,6 +363,17 @@ final class EscapeAwareTextView: NSTextView {
 
         if line.utf16.count == marker.length {
             insertText("", replacementRange: NSRange(location: paragraph.location, length: marker.length))
+            if let storage = textStorage, paragraph.location < storage.length {
+                ListMarkerAppearance.clearIndent(in: storage, paragraphAt: paragraph.location)
+            }
+            if let current = typingAttributes[.paragraphStyle] as? NSParagraphStyle {
+                var attributes = typingAttributes
+                let style = current.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                style.headIndent = 0
+                style.firstLineHeadIndent = 0
+                attributes[.paragraphStyle] = style
+                typingAttributes = attributes
+            }
             return
         }
 
@@ -401,24 +412,30 @@ final class EscapeAwareTextView: NSTextView {
         super.didChangeText()
         if let storage = textStorage {
             if isPastingText {
-                ChecklistMarkerStyle.normalize(in: storage)
+                ListMarkerAppearance.normalize(in: storage)
             } else {
-                ChecklistMarkerStyle.normalize(in: storage, paragraphAt: selectedRange().location)
+                ListMarkerAppearance.normalize(in: storage, paragraphAt: selectedRange().location)
+                ListMarkerAppearance.clearOrphanedIndent(in: storage,
+                                                         paragraphAt: selectedRange().location)
             }
         }
-        removeUnderlineFromLineBreaks()
+        removeInlineFormattingFromLineBreaks()
         refreshCenteredTrailingSpaceLayout()
     }
 
-    private func removeUnderlineFromLineBreaks() {
+    private func removeInlineFormattingFromLineBreaks() {
         guard let storage = textStorage, storage.length > 0 else { return }
         let source = storage.string as NSString
         let location = min(selectedRange().location, source.length)
         let candidates = [location - 1, location].filter { $0 >= 0 && $0 < source.length }
         for index in candidates where source.character(at: index) == 10
             || source.character(at: index) == 13 {
-            if (storage.attribute(.underlineStyle, at: index, effectiveRange: nil) as? Int ?? 0) != 0 {
-                storage.removeAttribute(.underlineStyle, range: NSRange(location: index, length: 1))
+            let range = NSRange(location: index, length: 1)
+            for key in [NSAttributedString.Key.underlineStyle, .underlineColor,
+                        .strikethroughStyle, .backgroundColor] {
+                if storage.attribute(key, at: index, effectiveRange: nil) != nil {
+                    storage.removeAttribute(key, range: range)
+                }
             }
         }
     }
@@ -618,6 +635,7 @@ struct NativeTextEditor: NSViewRepresentable {
         var isApplyingExternalContent = false
         private var pendingContentSave: DispatchWorkItem?
         private var terminationObserver: NSObjectProtocol?
+        private var formattingRefreshQueued = false
         var hasPendingChanges: Bool { pendingContentSave != nil }
 
         init(parent: NativeTextEditor) {
@@ -639,7 +657,18 @@ struct NativeTextEditor: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView, textView.window?.firstResponder === textView else { return }
+            parent.controller.noteSelectionChanged()
             parent.controller.rememberPaletteSelection()
+            scheduleFormattingRefresh()
+        }
+
+        private func scheduleFormattingRefresh() {
+            guard !formattingRefreshQueued else { return }
+            formattingRefreshQueued = true
+            DispatchQueue.main.async { [weak self] in
+                self?.formattingRefreshQueued = false
+                self?.parent.controller.refreshFormattingState()
+            }
         }
 
         func applyContent(text: String, richTextData: Data?) {
@@ -651,8 +680,10 @@ struct NativeTextEditor: NSViewRepresentable {
             (textView as? EscapeAwareTextView)?.resetAttachmentSizeCache()
             (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit()
             textView.typingAttributes = defaultAttributes
+            MainActor.assumeIsolated { parent.controller.noteTextChanged() }
             lastRichTextData = richTextData
             isApplyingExternalContent = false
+            scheduleFormattingRefresh()
         }
 
         func textStorage(
@@ -663,11 +694,13 @@ struct NativeTextEditor: NSViewRepresentable {
         ) {
             guard !isApplyingExternalContent, let textView,
                   (textView as? EscapeAwareTextView)?.isResizingAttachments != true else { return }
+            scheduleFormattingRefresh()
             pendingContentSave?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.commitPendingChanges() }
             pendingContentSave = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
             if editedMask.contains(.editedCharacters) {
+                MainActor.assumeIsolated { parent.controller.noteTextChanged() }
                 DispatchQueue.main.async { [weak textView] in
                     (textView as? EscapeAwareTextView)?.refreshCenteredTrailingSpaceLayout()
                 }
@@ -727,7 +760,7 @@ struct NativeTextEditor: NSViewRepresentable {
                 }
             }
             QuoteParagraphStyle.repairLegacyBlocks(in: content)
-            ChecklistMarkerStyle.normalize(in: content)
+            ListMarkerAppearance.normalize(in: content)
             InlineFormatBoundary.normalize(in: content)
             return content
         }

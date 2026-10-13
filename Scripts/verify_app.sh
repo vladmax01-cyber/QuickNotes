@@ -24,7 +24,7 @@ echo "Checking Swift source with SwiftLint..."
     --quiet
 
 echo "Running isolated smoke tests..."
-for suite in core model rich_text palette_placement resize_hit contrast; do
+for suite in core model rich_text haptic palette_placement resize_hit contrast; do
     bash "$SCRIPT_DIR/run_${suite}_smoke.sh"
 done
 

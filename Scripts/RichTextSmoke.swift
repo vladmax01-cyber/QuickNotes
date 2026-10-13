@@ -55,14 +55,14 @@ enum RichTextSmoke {
             throw RichTextSmokeFailure.failed("Highlight formatting was not applied")
         }
 
-        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        textView.setSelectedRange(NSRange(location: 0, length: 5))
         controller.toggleHighlight()
         guard textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil else {
-            throw RichTextSmokeFailure.failed("Highlight could not be toggled off at the cursor")
+            throw RichTextSmokeFailure.failed("Highlight could not be toggled off for selected text")
         }
         controller.toggleHighlight()
         guard textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) != nil else {
-            throw RichTextSmokeFailure.failed("Highlight could not be applied at the cursor")
+            throw RichTextSmokeFailure.failed("Highlight could not be reapplied to selected text")
         }
 
         guard let rtf = textView.rtf(
@@ -76,6 +76,7 @@ enum RichTextSmoke {
         try testListsAndSpecialCharacters()
         try testChecklistParagraphs()
         try testChecklistMarkerAppearance()
+        try testListMarkerAlignmentAndTransitions()
         try testHeadingContinuation()
         try testEmptyParagraphFormatting()
         try testBodyContinuationWithStaleTypingAttributes()
@@ -91,7 +92,218 @@ enum RichTextSmoke {
         try testFormatBoundariesAndLists()
         try testImagePersistence()
         try testUnderlineLineBreak()
+        try testFormattingControlState()
+        try testInsertionFormattingModes()
+        try testMultilineInlineFormats()
         print("All text styles and alignments, inline formats, lists, paste, undo, and image persistence passed")
+    }
+
+    @MainActor
+    private static func testMultilineInlineFormats() throws {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        textView.isRichText = true
+        textView.string = "Idea one\nIdea two\n○ Task three"
+        let controller = RichTextEditorController()
+        controller.attach(textView)
+        textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
+        controller.rememberPaletteSelection()
+        guard let storage = textView.textStorage else {
+            throw RichTextSmokeFailure.failed("Multiline editor has no text storage")
+        }
+        let source = textView.string as NSString
+        let first = 0
+        let second = source.range(of: "Idea two").location
+        let third = source.range(of: "Task three").location
+        let newline = source.range(of: "\n").location
+        let marker = source.range(of: "○").location
+
+        for (label, key, action) in [
+            ("Underline", NSAttributedString.Key.underlineStyle, controller.toggleUnderline),
+            ("Strikethrough", NSAttributedString.Key.strikethroughStyle, controller.toggleStrikethrough)
+        ] {
+            controller.applyPaletteAction(action)
+            let active = label == "Underline"
+                ? controller.formattingState.underline : controller.formattingState.strikethrough
+            guard active,
+                  (storage.attribute(key, at: first, effectiveRange: nil) as? Int ?? 0) != 0,
+                  (storage.attribute(key, at: second, effectiveRange: nil) as? Int ?? 0) != 0,
+                  (storage.attribute(key, at: third, effectiveRange: nil) as? Int ?? 0) != 0,
+                  storage.attribute(key, at: newline, effectiveRange: nil) == nil,
+                  storage.attribute(key, at: marker, effectiveRange: nil) == nil else {
+                throw RichTextSmokeFailure.failed("\(label) did not cover all visible selected lines")
+            }
+            controller.applyPaletteAction(action)
+            let inactive = label == "Underline"
+                ? !controller.formattingState.underline : !controller.formattingState.strikethrough
+            guard inactive,
+                  storage.attribute(key, at: first, effectiveRange: nil) == nil,
+                  storage.attribute(key, at: second, effectiveRange: nil) == nil,
+                  storage.attribute(key, at: third, effectiveRange: nil) == nil else {
+                throw RichTextSmokeFailure.failed("Second \(label) click did not clear every selected line")
+            }
+        }
+
+        controller.applyPaletteAction { controller.applyHighlight(.yellow) }
+        guard controller.formattingState.highlight,
+              controller.formattingState.highlightColor == .yellow,
+              storage.attribute(.backgroundColor, at: first, effectiveRange: nil) != nil,
+              storage.attribute(.backgroundColor, at: second, effectiveRange: nil) != nil,
+              storage.attribute(.backgroundColor, at: third, effectiveRange: nil) != nil,
+              storage.attribute(.backgroundColor, at: newline, effectiveRange: nil) == nil else {
+            throw RichTextSmokeFailure.failed("Multiline highlight did not apply to all visible text")
+        }
+        let originalSelectionColor = textView.selectedTextAttributes[.backgroundColor] as? NSColor
+        controller.setSelectionPreviewMode(true)
+        guard let previewColor = textView.selectedTextAttributes[.backgroundColor] as? NSColor,
+              previewColor.alphaComponent == 0 else {
+            throw RichTextSmokeFailure.failed("Selected text still hides the highlight preview")
+        }
+        controller.setSelectionPreviewMode(false)
+        guard (textView.selectedTextAttributes[.backgroundColor] as? NSColor) == originalSelectionColor else {
+            throw RichTextSmokeFailure.failed("Selection appearance was not restored after closing Format")
+        }
+        controller.applyPaletteAction { controller.applyHighlight(.yellow) }
+        guard !controller.formattingState.highlight,
+              storage.attribute(.backgroundColor, at: first, effectiveRange: nil) == nil,
+              storage.attribute(.backgroundColor, at: second, effectiveRange: nil) == nil,
+              storage.attribute(.backgroundColor, at: third, effectiveRange: nil) == nil else {
+            throw RichTextSmokeFailure.failed("Second color click did not remove multiline highlight")
+        }
+    }
+
+    @MainActor
+    private static func testFormattingControlState() throws {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        textView.isRichText = true
+        textView.string = "Bold plain\nAnother line"
+        let testWindow = NSWindow(
+            contentRect: NSRect(x: -2000, y: -2000, width: 320, height: 240),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        testWindow.contentView = textView
+        testWindow.makeFirstResponder(textView)
+        let controller = RichTextEditorController()
+        controller.attach(textView)
+
+        textView.setSelectedRange(NSRange(location: 0, length: 4))
+        controller.rememberPaletteSelection()
+        controller.applyPaletteAction(controller.toggleBold)
+        guard controller.formattingState.bold else {
+            throw RichTextSmokeFailure.failed("Bold control did not stay active for bold selection")
+        }
+        controller.applyPaletteAction(controller.toggleBold)
+        guard !controller.formattingState.bold,
+              textView.selectedRange() == NSRange(location: 0, length: 4) else {
+            throw RichTextSmokeFailure.failed("Second Bold click did not remove Bold from the same selection")
+        }
+        controller.applyPaletteAction(controller.toggleBold)
+        textView.setSelectedRange(NSRange(location: 0, length: 10))
+        controller.refreshFormattingState()
+        guard !controller.formattingState.bold else {
+            throw RichTextSmokeFailure.failed("Mixed bold selection was shown as fully bold")
+        }
+
+        textView.setSelectedRange(NSRange(location: 0, length: 4))
+        controller.toggleUnderline()
+        controller.refreshFormattingState()
+        guard controller.formattingState.underline else {
+            throw RichTextSmokeFailure.failed("Underline control did not reflect selection")
+        }
+        controller.toggleUnderline()
+        controller.refreshFormattingState()
+        guard !controller.formattingState.underline else {
+            throw RichTextSmokeFailure.failed("Underline control stayed active after turning it off")
+        }
+
+        controller.toggleItalic()
+        controller.toggleStrikethrough()
+        controller.toggleHighlight()
+        controller.refreshFormattingState()
+        guard controller.formattingState.italic,
+              controller.formattingState.strikethrough,
+              controller.formattingState.highlight else {
+            throw RichTextSmokeFailure.failed("Inline format controls did not reflect selected text")
+        }
+        controller.applyPaletteAction(controller.toggleItalic)
+        controller.applyPaletteAction(controller.toggleStrikethrough)
+        controller.applyPaletteAction(controller.toggleHighlight)
+        guard !controller.formattingState.italic,
+              !controller.formattingState.strikethrough,
+              !controller.formattingState.highlight else {
+            throw RichTextSmokeFailure.failed("A repeated format click did not remove the selected style")
+        }
+
+        controller.apply(.heading)
+        controller.refreshFormattingState()
+        guard controller.formattingState.textStyle == .heading else {
+            throw RichTextSmokeFailure.failed("Text style selection was not shown as active")
+        }
+        controller.setAlignment(.center)
+        controller.refreshFormattingState()
+        guard controller.formattingState.alignment == .center else {
+            throw RichTextSmokeFailure.failed("Alignment control did not reflect current paragraph")
+        }
+
+        textView.setSelectedRange(NSRange(location: 0, length: 4))
+        controller.applyList(.checklist)
+        textView.setSelectedRange(NSRange(location: 3, length: 0))
+        controller.refreshFormattingState()
+        guard controller.formattingState.listStyle == .checklist else {
+            throw RichTextSmokeFailure.failed("Checklist control did not reflect current line")
+        }
+        controller.applyList(.checklist)
+        controller.refreshFormattingState()
+        guard controller.formattingState.listStyle != .checklist else {
+            throw RichTextSmokeFailure.failed("Checklist control stayed active after removal")
+        }
+    }
+
+    @MainActor
+    private static func testInsertionFormattingModes() throws {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        textView.isRichText = true
+        textView.string = "One two three"
+        let controller = RichTextEditorController()
+        controller.attach(textView)
+        textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
+        controller.rememberPaletteSelection()
+
+        controller.applyPaletteAction(controller.toggleBold)
+        controller.applyPaletteAction(controller.toggleItalic)
+        controller.applyPaletteAction(controller.toggleUnderline)
+        controller.applyPaletteAction(controller.toggleStrikethrough)
+        controller.applyPaletteAction(controller.toggleHighlight)
+        guard controller.formattingState.bold, controller.formattingState.italic,
+              controller.formattingState.underline, controller.formattingState.strikethrough,
+              controller.formattingState.highlight,
+              textView.textStorage?.attribute(.backgroundColor, at: 4, effectiveRange: nil) == nil else {
+            throw RichTextSmokeFailure.failed("Cursor-only formatting changed old text or failed to stay active")
+        }
+
+        textView.insertText(" next", replacementRange: textView.selectedRange())
+        controller.rememberPaletteSelection()
+        let typedIndex = (textView.string as NSString).length - 2
+        let typedAttributes = textView.textStorage?.attributes(at: typedIndex, effectiveRange: nil) ?? [:]
+        let typedFont = typedAttributes[.font] as? NSFont
+        guard let typedFont,
+              NSFontManager.shared.traits(of: typedFont).contains(.boldFontMask),
+              NSFontManager.shared.traits(of: typedFont).contains(.italicFontMask),
+              (typedAttributes[.underlineStyle] as? Int ?? 0) != 0,
+              (typedAttributes[.strikethroughStyle] as? Int ?? 0) != 0,
+              typedAttributes[.backgroundColor] != nil else {
+            throw RichTextSmokeFailure.failed("Cursor-only formatting did not apply to subsequently typed text")
+        }
+
+        controller.applyPaletteAction(controller.toggleBold)
+        controller.applyPaletteAction(controller.toggleItalic)
+        controller.applyPaletteAction(controller.toggleUnderline)
+        controller.applyPaletteAction(controller.toggleStrikethrough)
+        controller.applyPaletteAction(controller.toggleHighlight)
+        guard !controller.formattingState.bold, !controller.formattingState.italic,
+              !controller.formattingState.underline, !controller.formattingState.strikethrough,
+              !controller.formattingState.highlight else {
+            throw RichTextSmokeFailure.failed("Cursor formatting stayed active after a second click")
+        }
     }
 
     @MainActor
@@ -434,18 +646,26 @@ enum RichTextSmoke {
         controller.attach(textView)
         textView.setSelectedRange(NSRange(location: 0, length: 8))
         controller.rememberPaletteSelection()
-        controller.applyHighlight(.mint)
+        controller.applyPaletteAction { controller.applyHighlight(.mint) }
         let mint = textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) as? NSColor
-        controller.rememberPaletteSelection()
-        controller.revealPaletteResult()
-        guard textView.selectedRange() == NSRange(location: 8, length: 0) else {
-            throw RichTextSmokeFailure.failed("Formatted text remained selected and hid its highlight")
+        guard controller.formattingState.highlightColor == .mint else {
+            throw RichTextSmokeFailure.failed("Mint highlight did not activate its color control")
         }
-        controller.restorePaletteSelection()
         guard textView.selectedRange() == NSRange(location: 0, length: 8) else {
-            throw RichTextSmokeFailure.failed("Palette lost the original text selection")
+            throw RichTextSmokeFailure.failed("Palette did not preserve the selected text")
         }
-        controller.applyHighlight(.pink)
+        controller.applyPaletteAction { controller.applyHighlight(.mint) }
+        guard textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil else {
+            throw RichTextSmokeFailure.failed("Clicking the same highlight color did not remove it")
+        }
+        guard !controller.formattingState.highlight, controller.formattingState.highlightColor == nil else {
+            throw RichTextSmokeFailure.failed("Removed highlight still appeared selected")
+        }
+        controller.applyPaletteAction { controller.applyHighlight(.mint) }
+        controller.applyPaletteAction { controller.applyHighlight(.pink) }
+        guard controller.formattingState.highlightColor == .pink else {
+            throw RichTextSmokeFailure.failed("Pink highlight did not update its color control")
+        }
         let pink = textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) as? NSColor
         guard let mint, let pink, !mint.isEqual(pink) else {
             throw RichTextSmokeFailure.failed("Highlight colors did not differ")
@@ -455,7 +675,7 @@ enum RichTextSmoke {
               decoded.attribute(.backgroundColor, at: 0, effectiveRange: nil) != nil else {
             throw RichTextSmokeFailure.failed("Colored highlight did not survive save and reload")
         }
-        controller.removeHighlight()
+        controller.applyPaletteAction(controller.removeHighlight)
         guard textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil else {
             throw RichTextSmokeFailure.failed("Remove Highlight did not clear the color")
         }
@@ -493,9 +713,20 @@ enum RichTextSmoke {
             guard textView.string == expected + "\n" + continuation else {
                 throw RichTextSmokeFailure.failed("List did not continue: \(textView.string)")
             }
+            let nextMarker = expected.utf16.count + 1
+            let continuationStyle = textView.textStorage?.attribute(.paragraphStyle, at: nextMarker,
+                                                                     effectiveRange: nil) as? NSParagraphStyle
+            guard (continuationStyle?.headIndent ?? 0) > 5,
+                  continuationStyle?.firstLineHeadIndent == 0 else {
+                throw RichTextSmokeFailure.failed("Continued list marker lost its hanging indent")
+            }
             textView.insertNewline(nil)
             guard textView.string == expected + "\n" else {
                 throw RichTextSmokeFailure.failed("Empty list item did not exit the list: \(textView.string)")
+            }
+            let exitStyle = textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle
+            guard abs(exitStyle?.headIndent ?? -1) < 0.1 else {
+                throw RichTextSmokeFailure.failed("Exiting an empty list kept the hanging indent")
             }
 
             textView.setSelectedRange(NSRange(location: 0, length: expected.utf16.count))
@@ -522,12 +753,12 @@ enum RichTextSmoke {
         controller.applyList(.checklist)
         let initialMarkerFont = textView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         guard textView.string == "○ ", textView.selectedRange().location == 2,
-              abs((initialMarkerFont?.pointSize ?? 0) - 18) < 0.1 else {
+              abs((initialMarkerFont?.pointSize ?? 0) - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Checklist could not be inserted before typing")
         }
         textView.insertText("First", replacementRange: textView.selectedRange())
         let typedFont = textView.textStorage?.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
-        guard textView.string == "○ First", abs((typedFont?.pointSize ?? 0) - 18) > 0.1 else {
+        guard textView.string == "○ First", abs((typedFont?.pointSize ?? 0) - 12) > 0.1 else {
             throw RichTextSmokeFailure.failed("Typing after an inserted checklist marker failed")
         }
 
@@ -539,7 +770,7 @@ enum RichTextSmoke {
             ? textView.textStorage?.attribute(.font, at: secondMarker, effectiveRange: nil) as? NSFont
             : nil
         guard textView.string == "○ First\n\n   \n○ Second\n",
-              abs((secondMarkerFont?.pointSize ?? 0) - 18) < 0.1 else {
+              abs((secondMarkerFont?.pointSize ?? 0) - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Checklist added markers to empty paragraphs: \(textView.string)")
         }
         textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
@@ -560,6 +791,155 @@ enum RichTextSmoke {
         controller.applyList(.checklist)
         guard textView.string == "○ First\n\n○ Second" else {
             throw RichTextSmokeFailure.failed("Checklist left a marker on an empty selected paragraph")
+        }
+    }
+
+    @MainActor
+    private static func testListMarkerAlignmentAndTransitions() throws {
+        let sentence = "A small idea can grow into something lovely when it has enough room to breathe."
+        for (style, prefix, size) in [
+            (RichTextEditorController.ListStyle.checklist, "○ ", CGFloat(12)),
+            (.bulleted, "• ", CGFloat(16)),
+            (.numbered, "1. ", CGFloat(13)),
+            (.dashed, "- ", CGFloat(13))
+        ] {
+            let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 235, height: 240))
+            textView.isRichText = true
+            textView.isHorizontallyResizable = false
+            textView.textContainer?.widthTracksTextView = true
+            textView.font = .preferredFont(forTextStyle: .body)
+            textView.string = sentence
+            let controller = RichTextEditorController()
+            controller.attach(textView)
+            textView.setSelectedRange(NSRange(location: 0, length: sentence.utf16.count))
+            controller.applyList(style)
+            guard let storage = textView.textStorage,
+                  textView.string == prefix + sentence,
+                  let markerFont = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
+                  abs(markerFont.pointSize - size) < 0.1,
+                  let paragraph = storage.attribute(.paragraphStyle, at: 0,
+                                                    effectiveRange: nil) as? NSParagraphStyle,
+                  paragraph.firstLineHeadIndent == 0,
+                  paragraph.headIndent > 5,
+                  paragraph.headIndent < 30 else {
+                throw RichTextSmokeFailure.failed("\(style) marker size or hanging indent was inconsistent: "
+                    + "\(textView.string.prefix(5)), font "
+                    + "\((textView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? -1), "
+                    + "head "
+                    + "\((textView.textStorage?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.headIndent ?? -1)")
+            }
+            if style == .bulleted {
+                let offset = storage.attribute(.baselineOffset, at: 0, effectiveRange: nil) as? CGFloat ?? 0
+                guard abs(offset + 1) < 0.1 else {
+                    throw RichTextSmokeFailure.failed("Bullet marker lost its vertical alignment")
+                }
+            }
+            guard let layout = textView.layoutManager, let container = textView.textContainer else {
+                throw RichTextSmokeFailure.failed("List text layout was unavailable")
+            }
+            layout.ensureLayout(for: container)
+            let bodyGlyph = layout.glyphIndexForCharacter(at: prefix.utf16.count)
+            var firstLine = NSRange(location: 0, length: 0)
+            _ = layout.lineFragmentRect(forGlyphAt: bodyGlyph, effectiveRange: &firstLine)
+            let secondLineGlyph = NSMaxRange(firstLine)
+            guard secondLineGlyph < layout.numberOfGlyphs else {
+                throw RichTextSmokeFailure.failed("List appearance test did not wrap the sentence")
+            }
+            let firstX = layout.boundingRect(forGlyphRange: NSRange(location: bodyGlyph, length: 1),
+                                             in: container).minX
+            let wrappedX = layout.boundingRect(forGlyphRange: NSRange(location: secondLineGlyph, length: 1),
+                                               in: container).minX
+            guard abs(firstX - wrappedX) < 3 else {
+                throw RichTextSmokeFailure.failed("Wrapped \(style) text did not align after its marker")
+            }
+            textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
+            controller.applyList(style)
+            let clearedStyle = storage.attribute(.paragraphStyle, at: 0,
+                                                 effectiveRange: nil) as? NSParagraphStyle
+            guard textView.string == sentence,
+                  abs(clearedStyle?.headIndent ?? -1) < 0.1 else {
+                throw RichTextSmokeFailure.failed("Removing \(style) left its hanging indent")
+            }
+        }
+
+        let transition = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
+        transition.isRichText = true
+        transition.string = sentence
+        let controller = RichTextEditorController()
+        controller.attach(transition)
+        transition.setSelectedRange(NSRange(location: 0, length: sentence.utf16.count))
+        controller.applyList(.checklist)
+        controller.applyList(.bulleted)
+        guard transition.string == "• " + sentence else {
+            throw RichTextSmokeFailure.failed("Checklist did not convert cleanly to a bullet")
+        }
+        controller.applyList(.blockQuote)
+        let quote = transition.textStorage?.attribute(.paragraphStyle, at: 0,
+                                                       effectiveRange: nil) as? NSParagraphStyle
+        guard transition.string == sentence, QuoteParagraphStyle.isQuoted(quote) else {
+            throw RichTextSmokeFailure.failed("Converting a list to a quote kept its old marker")
+        }
+        controller.applyList(.numbered)
+        let numbered = transition.textStorage?.attribute(.paragraphStyle, at: 0,
+                                                          effectiveRange: nil) as? NSParagraphStyle
+        guard transition.string == "1. " + sentence,
+              !QuoteParagraphStyle.isQuoted(numbered),
+              (numbered?.headIndent ?? 0) > 0 else {
+            throw RichTextSmokeFailure.failed("Converting a quote to a list kept the quote layout")
+        }
+
+        let imported = NSMutableAttributedString(string: "• First idea\n○ Second idea")
+        imported.addAttribute(.font, value: NSFont.systemFont(ofSize: 13),
+                              range: NSRange(location: 0, length: imported.length))
+        imported.addAttribute(.font, value: NSFont.systemFont(ofSize: 32, weight: .bold),
+                              range: NSRange(location: 0, length: 1))
+        let checklistLocation = (imported.string as NSString).range(of: "○").location
+        imported.addAttribute(.font, value: NSFont.systemFont(ofSize: 28, weight: .bold),
+                              range: NSRange(location: checklistLocation, length: 1))
+        guard let importedRTF = imported.rtf(from: NSRange(location: 0, length: imported.length),
+                                             documentAttributes: [:]) else {
+            throw RichTextSmokeFailure.failed("Could not prepare mixed list import")
+        }
+        let editor = NativeTextEditor(
+            noteID: UUID(), text: imported.string, richTextData: importedRTF,
+            focusGeneration: 0, controller: RichTextEditorController(),
+            onChange: { _, _, _ in }, onEscape: {}
+        )
+        let restored = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
+        let coordinator = editor.makeCoordinator()
+        coordinator.textView = restored
+        coordinator.applyContent(text: imported.string, richTextData: importedRTF)
+        guard let restoredStorage = restored.textStorage,
+              let bulletFont = restoredStorage.attribute(.font, at: 0,
+                                                         effectiveRange: nil) as? NSFont,
+              let circleFont = restoredStorage.attribute(.font, at: checklistLocation,
+                                                         effectiveRange: nil) as? NSFont,
+              abs(bulletFont.pointSize - 16) < 0.1,
+              abs(circleFont.pointSize - 12) < 0.1 else {
+            throw RichTextSmokeFailure.failed("Imported mixed list kept oversized markers")
+        }
+        guard restored.toggleChecklist(at: checklistLocation),
+              restored.string.contains("◉ Second idea"),
+              let checkedFont = restored.textStorage?.attribute(.font, at: checklistLocation,
+                                                                effectiveRange: nil) as? NSFont,
+              abs(checkedFont.pointSize - 12) < 0.1 else {
+            throw RichTextSmokeFailure.failed("Checking a list item enlarged its marker")
+        }
+
+        let manual = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
+        manual.isRichText = true
+        manual.font = .preferredFont(forTextStyle: .body)
+        manual.string = sentence
+        let manualController = RichTextEditorController()
+        manualController.attach(manual)
+        manual.setSelectedRange(NSRange(location: 0, length: sentence.utf16.count))
+        manualController.applyList(.bulleted)
+        manual.setSelectedRange(NSRange(location: 0, length: 2))
+        manual.insertText("", replacementRange: manual.selectedRange())
+        let manualStyle = manual.textStorage?.attribute(.paragraphStyle, at: 0,
+                                                       effectiveRange: nil) as? NSParagraphStyle
+        guard manual.string == sentence, abs(manualStyle?.headIndent ?? -1) < 0.1 else {
+            throw RichTextSmokeFailure.failed("Deleting a marker by hand left its hanging indent")
         }
     }
 
@@ -594,8 +974,8 @@ enum RichTextSmoke {
               let second = storage.attribute(.font, at: secondMarker, effectiveRange: nil) as? NSFont,
               let body = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
               first.fontName == second.fontName,
-              abs(first.pointSize - 18) < 0.1,
-              abs(second.pointSize - 18) < 0.1,
+              abs(first.pointSize - 12) < 0.1,
+              abs(second.pointSize - 12) < 0.1,
               abs(body.pointSize - 13) < 0.1,
               storage.string == content.string else {
             throw RichTextSmokeFailure.failed("Checklist circles did not match while body text stayed intact")
@@ -773,11 +1153,16 @@ enum RichTextSmoke {
         let controller = RichTextEditorController()
         controller.attach(textView)
         textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
-        controller.applyList(.blockQuote)
+        controller.rememberPaletteSelection()
+        controller.applyPaletteAction { controller.applyList(.blockQuote) }
         guard textView.string == "First quote\nSecond quote",
               QuoteParagraphStyle.isQuoted(textView.textStorage?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle),
               QuoteParagraphStyle.isQuoted(textView.textStorage?.attribute(.paragraphStyle, at: 13, effectiveRange: nil) as? NSParagraphStyle) else {
             throw RichTextSmokeFailure.failed("Block quote inserted visible markers or did not style both paragraphs")
+        }
+        controller.refreshFormattingState()
+        guard controller.formattingState.listStyle == .blockQuote else {
+            throw RichTextSmokeFailure.failed("Block quote option did not stay selected")
         }
         let range = NSRange(location: 0, length: textView.string.utf16.count)
         guard let rtf = textView.rtf(from: range),
@@ -787,10 +1172,12 @@ enum RichTextSmoke {
             throw RichTextSmokeFailure.failed("Block quote did not survive save and reload")
         }
 
-        textView.setSelectedRange(range)
-        controller.applyList(.blockQuote)
+        controller.applyPaletteAction { controller.applyList(.blockQuote) }
         guard !QuoteParagraphStyle.isQuoted(textView.textStorage?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle) else {
             throw RichTextSmokeFailure.failed("Block quote could not be turned off")
+        }
+        guard controller.formattingState.listStyle != .blockQuote else {
+            throw RichTextSmokeFailure.failed("Block quote option stayed active after removal")
         }
 
         textView.string = "> Old quote"
@@ -891,6 +1278,26 @@ enum RichTextSmoke {
         guard controller.currentFontSize == 49 else {
             throw RichTextSmokeFailure.failed("Increase Size stopped at 48 while the numeric control allowed 72")
         }
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        controller.setFontSize(18)
+        guard controller.currentFontSize == 18,
+              let oldFont = textView.textStorage?.attribute(.font, at: 1, effectiveRange: nil) as? NSFont,
+              oldFont.pointSize == 49 else {
+            throw RichTextSmokeFailure.failed("Cursor font size did not stay selected for future typing")
+        }
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.noteSelectionChanged()
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        controller.noteSelectionChanged()
+        guard controller.currentFontSize == 49 else {
+            throw RichTextSmokeFailure.failed("Moved cursor retained the previous insertion-only font size")
+        }
+        controller.setFontSize(18)
+        textView.insertText("x", replacementRange: textView.selectedRange())
+        guard let insertedFont = textView.textStorage?.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
+              insertedFont.pointSize == 18 else {
+            throw RichTextSmokeFailure.failed("Cursor font size did not apply to inserted text")
+        }
     }
 
     @MainActor
@@ -909,7 +1316,7 @@ enum RichTextSmoke {
             guard let storage = textView.textStorage,
                   let marker = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
                   let body = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
-                  abs(marker.pointSize - 18) < 0.1,
+                  abs(marker.pointSize - 12) < 0.1,
                   abs(body.pointSize - size) < 0.1 else {
                 throw RichTextSmokeFailure.failed("\(style.rawValue) changed the checklist marker or missed its body")
             }
@@ -957,7 +1364,7 @@ enum RichTextSmoke {
         controller.applyHighlight(.yellow)
         guard let storage = textView.textStorage,
               let markerFont = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
-              abs(markerFont.pointSize - 18) < 0.1,
+              abs(markerFont.pointSize - 12) < 0.1,
               storage.attribute(.underlineStyle, at: 0, effectiveRange: nil) == nil,
               storage.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) == nil,
               storage.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil else {
@@ -980,7 +1387,7 @@ enum RichTextSmoke {
         textView.setSelectedRange(NSRange(location: 0, length: 1))
         controller.clearFormatting()
         guard let clearedMarker = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
-              abs(clearedMarker.pointSize - 18) < 0.1 else {
+              abs(clearedMarker.pointSize - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Clear Formatting changed the checklist circle")
         }
 
@@ -1011,7 +1418,7 @@ enum RichTextSmoke {
               let firstFont = pasteView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
               let secondFont = pasteView.textStorage?.attribute(.font, at: secondMarker, effectiveRange: nil) as? NSFont,
               firstFont.fontName == secondFont.fontName,
-              abs(firstFont.pointSize - 18) < 0.1 else {
+              abs(firstFont.pointSize - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Pasted checklist circles did not match")
         }
         let matchingView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
@@ -1022,7 +1429,7 @@ enum RichTextSmoke {
               let matchingFirstFont = matchingView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
               let matchingSecondFont = matchingView.textStorage?.attribute(.font, at: matchingSecond, effectiveRange: nil) as? NSFont,
               matchingFirstFont.fontName == matchingSecondFont.fontName,
-              abs(matchingFirstFont.pointSize - 18) < 0.1 else {
+              abs(matchingFirstFont.pointSize - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Match Note Style paste left mismatched checklist circles")
         }
 
@@ -1042,7 +1449,7 @@ enum RichTextSmoke {
               let richFirstFont = richPasteView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
               let richSecondFont = richPasteView.textStorage?.attribute(.font, at: richSecond, effectiveRange: nil) as? NSFont,
               richFirstFont.fontName == richSecondFont.fontName,
-              abs(richFirstFont.pointSize - 18) < 0.1 else {
+              abs(richFirstFont.pointSize - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Keep Formatting paste left mismatched checklist circles")
         }
 
@@ -1065,7 +1472,7 @@ enum RichTextSmoke {
         undoController.toggleBold()
         undoView.undoManager?.undo()
         guard let undoMarker = undoView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
-              abs(undoMarker.pointSize - 18) < 0.1 else {
+              abs(undoMarker.pointSize - 12) < 0.1 else {
             throw RichTextSmokeFailure.failed("Undo restored the uneven checklist circle")
         }
     }
@@ -1134,6 +1541,8 @@ enum RichTextSmoke {
             value: NSUnderlineStyle.single.rawValue,
             range: NSRange(location: 0, length: 6)
         )
+        content.addAttribute(.underlineColor, value: NSColor.systemBlue,
+                             range: NSRange(location: 0, length: 6))
         guard let rtf = content.rtf(from: NSRange(location: 0, length: content.length),
                                     documentAttributes: [:]) else {
             throw RichTextSmokeFailure.failed("Could not prepare underlined test note")
@@ -1147,7 +1556,8 @@ enum RichTextSmoke {
         coordinator.textView = textView
         coordinator.applyContent(text: content.string, richTextData: rtf)
         guard textView.textStorage?.attribute(.underlineStyle, at: 0, effectiveRange: nil) != nil,
-              textView.textStorage?.attribute(.underlineStyle, at: 5, effectiveRange: nil) == nil else {
+              textView.textStorage?.attribute(.underlineStyle, at: 5, effectiveRange: nil) == nil,
+              textView.textStorage?.attribute(.underlineColor, at: 5, effectiveRange: nil) == nil else {
             throw RichTextSmokeFailure.failed("Underline continued across a line break")
         }
     }

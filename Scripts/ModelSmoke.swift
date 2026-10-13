@@ -146,6 +146,12 @@ enum ModelSmoke {
         )
         shortcutDefaults.set(try JSONEncoder().encode(fnOnly), forKey: "shortcut")
         let preferences = AppPreferences(defaults: shortcutDefaults)
+        guard preferences.hapticFeedbackEnabled else {
+            throw ModelSmokeFailure.failed("Haptic feedback should be enabled by default")
+        }
+        guard abs(preferences.customAccentBrightness - 0.96) < 0.001 else {
+            throw ModelSmokeFailure.failed("Custom color shade changed the existing default color")
+        }
         guard preferences.shortcut == .defaultShortcut else {
             throw ModelSmokeFailure.failed("Saved fn-only shortcut did not migrate to Control + N")
         }
@@ -178,11 +184,19 @@ enum ModelSmoke {
 
         preferences.windowTransparency = 0.87
         preferences.showFormattingToolbarWhenWide = false
+        preferences.hapticFeedbackEnabled = false
+        preferences.customAccentBrightness = 0.58
+        preferences.fontSizeControlStyle = .classic
+        preferences.defaultPinned = true
         let firstToolbarAction = preferences.toolbarOrder[0]
         preferences.moveToolbarAction(firstToolbarAction, offset: 1)
         let appearancePreferences = AppPreferences(defaults: shortcutDefaults)
         guard abs(appearancePreferences.windowTransparency - 0.87) < 0.001,
               appearancePreferences.showFormattingToolbarWhenWide == false,
+              !appearancePreferences.hapticFeedbackEnabled,
+              abs(appearancePreferences.customAccentBrightness - 0.58) < 0.001,
+              appearancePreferences.fontSizeControlStyle == .classic,
+              appearancePreferences.defaultPinned,
               appearancePreferences.toolbarOrder[1] == firstToolbarAction else {
             throw ModelSmokeFailure.failed("Appearance or toolbar customization was not persisted")
         }

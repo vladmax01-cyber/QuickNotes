@@ -26,9 +26,22 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 *Open Aa for text styles, highlighting, lists, alignment, and font size. The little reminder uses a title, mint highlight, italic text, and a checklist.*
 
-<img src="docs/screenshots/compact-desktop.jpg" alt="The folded Ideas note floating on a blue desktop background" width="850">
+### Open, then tucked away
 
-*Tuck Ideas into a floating bar when you need a clear screen. Double-click the bar to bring the note back.*
+<table>
+  <tr>
+    <th>Open</th>
+    <th aria-label="becomes">→</th>
+    <th>Folded on your desktop</th>
+  </tr>
+  <tr>
+    <td align="center" valign="middle"><img src="docs/screenshots/compact.png" alt="The Ideas note open at its compact window size" width="280"></td>
+    <td align="center" valign="middle">→</td>
+    <td align="center" valign="middle"><img src="docs/screenshots/compact-desktop.jpg" alt="The same Ideas note folded into a small bar on a clean blue desktop" width="520"></td>
+  </tr>
+</table>
+
+*Double-click the header to fold Ideas into a floating bar. Double-click the bar to bring the same note back.*
 
 <img src="docs/screenshots/shortcut-settings.png" alt="Quick Notes Shortcut settings showing Control + N to show or hide the note and an optional Command + N shortcut for a new note" width="700">
 
@@ -56,6 +69,10 @@ The project uses Swift tools version 5.10 and targets macOS 14 or later. Xcode p
 ## Your notes
 
 Notes are saved locally in `~/Library/Application Support/Quick Notes/notes.json`. This repository contains the source code and tests, not your personal notes.
+
+## License
+
+Quick Notes is released under the [MIT License](LICENSE).
 
 ## Contributors
 

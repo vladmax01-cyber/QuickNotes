@@ -72,6 +72,7 @@ final class AppPreferences: ObservableObject {
         static let appearance = "appearance"
         static let accent = "accent"
         static let customAccentHue = "customAccentHue"
+        static let customAccentBrightness = "customAccentBrightness"
         static let useCustomAccent = "useCustomAccent"
         static let shortcut = "shortcut"
         static let newNoteShortcut = "newNoteShortcut"
@@ -82,6 +83,7 @@ final class AppPreferences: ObservableObject {
         static let toolbarUsesAccent = "toolbarUsesAccent"
         static let fontSizeControlStyle = "fontSizeControlStyle"
         static let showFormattingToolbarWhenWide = "showFormattingToolbarWhenWide"
+        static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
         static let toolbarOrder = "toolbarOrder"
     }
 
@@ -98,6 +100,9 @@ final class AppPreferences: ObservableObject {
     @Published var accent: AccentChoice { didSet { save(accent.rawValue, key: Key.accent) } }
     @Published var customAccentHue: Double {
         didSet { save(customAccentHue, key: Key.customAccentHue) }
+    }
+    @Published var customAccentBrightness: Double {
+        didSet { save(customAccentBrightness, key: Key.customAccentBrightness) }
     }
     @Published var useCustomAccent: Bool {
         didSet { save(useCustomAccent, key: Key.useCustomAccent) }
@@ -117,6 +122,9 @@ final class AppPreferences: ObservableObject {
     }
     @Published var showFormattingToolbarWhenWide: Bool {
         didSet { save(showFormattingToolbarWhenWide, key: Key.showFormattingToolbarWhenWide) }
+    }
+    @Published var hapticFeedbackEnabled: Bool {
+        didSet { save(hapticFeedbackEnabled, key: Key.hapticFeedbackEnabled) }
     }
     @Published var toolbarOrder: [ToolbarAction] {
         didSet {
@@ -144,6 +152,7 @@ final class AppPreferences: ObservableObject {
             Key.appearance: AppearanceMode.system.rawValue,
             Key.accent: AccentChoice.blue.rawValue,
             Key.customAccentHue: 0.58,
+            Key.customAccentBrightness: 0.96,
             Key.useCustomAccent: false,
             Key.windowTransparency: 0.08,
             Key.useGlass: true,
@@ -151,6 +160,7 @@ final class AppPreferences: ObservableObject {
             Key.toolbarUsesAccent: true,
             Key.fontSizeControlStyle: FontSizeControlStyle.numeric.rawValue,
             Key.showFormattingToolbarWhenWide: true,
+            Key.hapticFeedbackEnabled: true,
             Key.newNoteShortcutEnabled: true
         ])
 
@@ -164,6 +174,7 @@ final class AppPreferences: ObservableObject {
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         accent = AccentChoice(rawValue: defaults.string(forKey: Key.accent) ?? "") ?? .blue
         customAccentHue = min(1, max(0, defaults.double(forKey: Key.customAccentHue)))
+        customAccentBrightness = min(0.96, max(0.45, defaults.double(forKey: Key.customAccentBrightness)))
         useCustomAccent = defaults.bool(forKey: Key.useCustomAccent)
         windowTransparency = min(1, max(0, defaults.double(forKey: Key.windowTransparency)))
         useGlass = defaults.bool(forKey: Key.useGlass)
@@ -173,6 +184,7 @@ final class AppPreferences: ObservableObject {
             rawValue: defaults.string(forKey: Key.fontSizeControlStyle) ?? ""
         ) ?? .numeric
         showFormattingToolbarWhenWide = defaults.bool(forKey: Key.showFormattingToolbarWhenWide)
+        hapticFeedbackEnabled = defaults.bool(forKey: Key.hapticFeedbackEnabled)
         newNoteShortcutEnabled = defaults.bool(forKey: Key.newNoteShortcutEnabled)
 
         let defaultOrder = ToolbarAction.allCases
@@ -223,7 +235,7 @@ final class AppPreferences: ObservableObject {
 
     var accentColor: Color {
         useCustomAccent
-            ? Color(hue: customAccentHue, saturation: 0.82, brightness: 0.96)
+            ? Color(hue: customAccentHue, saturation: 0.82, brightness: customAccentBrightness)
             : accent.color
     }
 

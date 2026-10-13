@@ -7,7 +7,7 @@ struct QuickNoteView: View {
     @ObservedObject var store: NotesStore
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var viewModel: AppViewModel
-    let editorController: RichTextEditorController
+    @ObservedObject var editorController: RichTextEditorController
 
     let onNewNote: () -> Void
     let onDuplicateNote: (UUID) -> Void
@@ -106,7 +106,7 @@ struct QuickNoteView: View {
     }
 
     private var collapsedHeader: some View {
-        WindowDragRegion(onDoubleClick: onToggleCollapse)
+        WindowDragRegion(onDoubleClick: toggleCollapseWithFeedback)
             .overlay {
                 Text(store.selectedNote?.title ?? "Quick Notes")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -122,7 +122,7 @@ struct QuickNoteView: View {
             .frame(height: 32)
             .help("Double-click to expand note")
             .contextMenu {
-                Button("Expand Note", action: onToggleCollapse)
+                Button("Expand Note", action: toggleCollapseWithFeedback)
                 Button(preferences.translucentCollapsedBar ? "Turn Off Translucency" : "Use Translucency") {
                     preferences.translucentCollapsedBar.toggle()
                 }
@@ -147,7 +147,7 @@ struct QuickNoteView: View {
                     }
                 }
 
-                WindowDragRegion(onDoubleClick: onToggleCollapse)
+                WindowDragRegion(onDoubleClick: toggleCollapseWithFeedback)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .help(noteDetails)
 
@@ -216,53 +216,66 @@ struct QuickNoteView: View {
                     Divider()
                         .frame(height: 18)
                         .padding(.horizontal, 1)
-                    InlineFormatButton(label: "Bold", text: "B", font: .body.bold()) {
-                        editorController.toggleBold()
+                    InlineFormatButton(label: "Bold", text: "B",
+                                       isActive: editorController.formattingState.bold,
+                                       accent: preferences.accentColor) {
+                        performFormatAction(editorController.toggleBold)
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 1 {
-                    InlineFormatButton(label: "Italic", text: "I", font: .body.italic()) {
-                        editorController.toggleItalic()
+                    InlineFormatButton(label: "Italic", text: "I",
+                                       isActive: editorController.formattingState.italic,
+                                       accent: preferences.accentColor) {
+                        performFormatAction(editorController.toggleItalic)
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 2 {
-                    InlineFormatButton(label: "Underline", text: "U", font: .body) {
-                        editorController.toggleUnderline()
+                    InlineFormatButton(label: "Underline", text: "U",
+                                       isActive: editorController.formattingState.underline,
+                                       accent: preferences.accentColor) {
+                        performFormatAction(editorController.toggleUnderline)
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 3 {
-                    InlineFormatButton(label: "Checklist", symbol: "checklist") {
-                        editorController.applyList(.checklist)
+                    InlineFormatButton(label: "Checklist", symbol: "checklist",
+                                       isActive: editorController.formattingState.listStyle == .checklist,
+                                       accent: preferences.accentColor) {
+                        performFormatAction { editorController.applyList(.checklist) }
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 4 {
-                    InlineFormatButton(label: "Bulleted List", symbol: "list.bullet") {
-                        editorController.applyList(.bulleted)
+                    InlineFormatButton(label: "Bulleted List", symbol: "list.bullet",
+                                       isActive: editorController.formattingState.listStyle == .bulleted,
+                                       accent: preferences.accentColor) {
+                        performFormatAction { editorController.applyList(.bulleted) }
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 5 {
-                    InlineFormatButton(label: "Numbered List", symbol: "list.number") {
-                        editorController.applyList(.numbered)
+                    InlineFormatButton(label: "Numbered List", symbol: "list.number",
+                                       isActive: editorController.formattingState.listStyle == .numbered,
+                                       accent: preferences.accentColor) {
+                        performFormatAction { editorController.applyList(.numbered) }
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 6 {
-                    InlineFormatButton(label: "Strikethrough", symbol: "strikethrough") {
-                        editorController.toggleStrikethrough()
+                    InlineFormatButton(label: "Strikethrough", text: "S",
+                                       isActive: editorController.formattingState.strikethrough,
+                                       accent: preferences.accentColor) {
+                        performFormatAction(editorController.toggleStrikethrough)
                     }
                     .transition(inlineControlTransition)
                 }
                 if expandedCount > 7 {
-                    InlineFormatButton(label: "Highlight", symbol: "highlighter") {
-                        editorController.toggleHighlight()
-                        editorController.rememberPaletteSelection()
-                        editorController.revealPaletteResult()
-                        editorController.clearPaletteSelection()
+                    InlineFormatButton(label: "Highlight", symbol: "highlighter",
+                                       isActive: editorController.formattingState.highlight,
+                                       accent: preferences.accentColor) {
+                        performFormatAction(editorController.toggleHighlight)
                     }
                     .transition(inlineControlTransition)
                 }
@@ -289,6 +302,8 @@ struct QuickNoteView: View {
                     withAnimation(reducedMotionAnimation) {
                         onTogglePin()
                     }
+                    InteractionHaptics.shared.play(.pinChanged,
+                                                    enabled: preferences.hapticFeedbackEnabled)
                 }
             )
             .accessibilityValue(viewModel.isPinned ? "Pinned" : "Unpinned")
@@ -485,6 +500,19 @@ struct QuickNoteView: View {
     private var toolbarIconColor: Color {
         preferences.toolbarUsesAccent ? preferences.accentColor : .primary
     }
+
+    private func performFormatAction(_ action: () -> Void) {
+        action()
+        editorController.refreshFormattingState()
+        InteractionHaptics.shared.play(.inlineFormatApplied,
+                                        enabled: preferences.hapticFeedbackEnabled)
+    }
+
+    private func toggleCollapseWithFeedback() {
+        onToggleCollapse()
+        InteractionHaptics.shared.play(.noteFolded,
+                                        enabled: preferences.hapticFeedbackEnabled)
+    }
 }
 
 private struct HeaderButton: View {
@@ -531,7 +559,7 @@ private struct HeaderButton: View {
 
 private struct FormatPaletteButton: View {
     @Binding var isPresented: Bool
-    let controller: RichTextEditorController
+    @ObservedObject var controller: RichTextEditorController
     @ObservedObject var preferences: AppPreferences
     let onMove: (Int) -> Void
 
@@ -539,14 +567,17 @@ private struct FormatPaletteButton: View {
         Button(action: performAction) {
             Text("Aa")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(preferences.toolbarUsesAccent ? preferences.accentColor : Color.primary)
+                .foregroundStyle(isPresented ? preferences.accentColor : (preferences.toolbarUsesAccent ? preferences.accentColor : Color.primary))
                 .frame(width: 26, height: 26)
+                .background(isPresented ? preferences.accentColor.opacity(0.19) : .clear,
+                            in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .tint(preferences.toolbarUsesAccent ? preferences.accentColor : Color.primary)
         .help("Text Formatting\nCommand-click: move right\nCommand-Shift-click: move left")
         .accessibilityLabel("Text Formatting")
+        .accessibilityValue(isPresented ? "Open" : "Closed")
         .background {
             PersistentFormattingPopover(
                 isPresented: $isPresented,
@@ -567,7 +598,12 @@ private struct FormatPaletteButton: View {
             } else {
                 controller.clearPaletteSelection()
             }
+            let opening = !isPresented
             isPresented.toggle()
+            if opening {
+                InteractionHaptics.shared.play(.paletteOpened,
+                                                enabled: preferences.hapticFeedbackEnabled)
+            }
         }
     }
 }
@@ -578,7 +614,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
     let preferences: AppPreferences
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isPresented: $isPresented)
+        Coordinator(isPresented: $isPresented, controller: controller)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -589,10 +625,12 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.isPresented = $isPresented
         if !isPresented {
+            controller.setSelectionPreviewMode(false)
             coordinator.popover?.close()
             controller.clearPaletteSelection()
             return
         }
+        controller.setSelectionPreviewMode(true)
 
         if coordinator.popover == nil {
             let popover = NSPopover()
@@ -608,7 +646,6 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
                   let popover = coordinator.popover, !popover.isShown else { return }
             let fontSizeInput = FontSizeInputModel()
             fontSizeInput.text = String(controller.currentFontSize)
-            fontSizeInput.selectedHighlightColor = controller.preferredHighlightColor
             popover.contentViewController = NSHostingController(rootView: FormattingPalette(
                 controller: controller,
                 preferences: preferences,
@@ -647,12 +684,14 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSPopoverDelegate {
         var isPresented: Binding<Bool>
+        weak var controller: RichTextEditorController?
         var popover: NSPopover?
         private weak var sourceWindow: NSWindow?
         private var windowObservers: [NSObjectProtocol] = []
 
-        init(isPresented: Binding<Bool>) {
+        init(isPresented: Binding<Bool>, controller: RichTextEditorController) {
             self.isPresented = isPresented
+            self.controller = controller
         }
 
         func observe(window: NSWindow) {
@@ -699,6 +738,7 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         }
 
         func popoverDidClose(_ notification: Notification) {
+            controller?.setSelectionPreviewMode(false)
             for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
             windowObservers.removeAll()
             sourceWindow = nil
@@ -719,22 +759,27 @@ private struct InlineFormatButton: View {
     let label: String
     let text: String?
     let symbol: String?
-    let font: Font
+    let isActive: Bool
+    let accent: Color
     let action: () -> Void
 
-    init(label: String, text: String, font: Font, action: @escaping () -> Void) {
+    init(label: String, text: String, isActive: Bool, accent: Color,
+         action: @escaping () -> Void) {
         self.label = label
         self.text = text
         symbol = nil
-        self.font = font
+        self.isActive = isActive
+        self.accent = accent
         self.action = action
     }
 
-    init(label: String, symbol: String, action: @escaping () -> Void) {
+    init(label: String, symbol: String, isActive: Bool, accent: Color,
+         action: @escaping () -> Void) {
         self.label = label
         text = nil
         self.symbol = symbol
-        font = .body
+        self.isActive = isActive
+        self.accent = accent
         self.action = action
     }
 
@@ -743,23 +788,43 @@ private struct InlineFormatButton: View {
             Group {
                 if let symbol {
                     Image(systemName: symbol)
+                        .font(.system(size: 14, weight: .semibold))
                 } else if let text {
                     Text(text)
-                        .font(font)
+                        .font(.system(size: 15, weight: label == "Bold" ? .bold : .semibold))
+                        .italic(label == "Italic")
                         .underline(label == "Underline")
+                        .strikethrough(label == "Strikethrough")
                 }
             }
-            .frame(width: 25, height: 27)
-            .contentShape(Rectangle())
+            .foregroundStyle(Color.primary)
+            .frame(width: 27, height: 27)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(InlineFormatButtonStyle(accent: accent, isActive: isActive))
         .help(label)
         .accessibilityLabel(label)
+        .accessibilityValue(isActive ? "On" : "Off")
+        .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                   ? nil : .easeOut(duration: 0.14), value: isActive)
+    }
+}
+
+private struct InlineFormatButtonStyle: ButtonStyle {
+    let accent: Color
+    let isActive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        return configuration.label
+            .background(shape.fill(isActive ? accent.opacity(0.23)
+                                   : configuration.isPressed ? Color.primary.opacity(0.10) : .clear))
+            .overlay(shape.strokeBorder(isActive ? accent.opacity(0.60) : .clear, lineWidth: 0.7))
+            .contentShape(shape)
     }
 }
 
 private struct FormattingPalette: View {
-    let controller: RichTextEditorController
+    @ObservedObject var controller: RichTextEditorController
     @ObservedObject var preferences: AppPreferences
     let onClose: () -> Void
     @ObservedObject var fontSizeInput: FontSizeInputModel
@@ -779,19 +844,30 @@ private struct FormattingPalette: View {
                 }
 
                 HStack(spacing: 6) {
-                    PaletteFormatButton(label: "Bold", text: "B", font: .headline) {
+                    PaletteFormatButton(label: "Bold", text: "B", font: .headline,
+                                        isActive: controller.formattingState.bold,
+                                        accent: preferences.accentColor) {
                         apply(controller.toggleBold)
                     }
-                    PaletteFormatButton(label: "Italic", text: "I", font: .headline.italic()) {
+                    PaletteFormatButton(label: "Italic", text: "I", font: .headline.italic(),
+                                        isActive: controller.formattingState.italic,
+                                        accent: preferences.accentColor) {
                         apply(controller.toggleItalic)
                     }
-                    PaletteFormatButton(label: "Underline", text: "U", font: .headline, underline: true) {
+                    PaletteFormatButton(label: "Underline", text: "U", font: .headline,
+                                        underline: true, isActive: controller.formattingState.underline,
+                                        accent: preferences.accentColor) {
                         apply(controller.toggleUnderline)
                     }
-                    PaletteFormatButton(label: "Strikethrough", symbol: "strikethrough") {
+                    PaletteFormatButton(label: "Strikethrough", text: "S", font: .headline,
+                                        strikethrough: true,
+                                        isActive: controller.formattingState.strikethrough,
+                                        accent: preferences.accentColor) {
                         apply(controller.toggleStrikethrough)
                     }
-                    PaletteFormatButton(label: "Highlight", symbol: "highlighter") {
+                    PaletteFormatButton(label: "Highlight", symbol: "highlighter",
+                                        isActive: controller.formattingState.highlight,
+                                        accent: preferences.accentColor) {
                         apply(controller.toggleHighlight)
                     }
                 }
@@ -802,9 +878,9 @@ private struct FormattingPalette: View {
                             HighlightSwatchButton(
                                 color: color,
                                 accent: preferences.accentColor,
-                                isSelected: fontSizeInput.selectedHighlightColor == color
+                                isSelected: controller.formattingState.highlight
+                                    && controller.formattingState.highlightColor == color
                             ) {
-                                fontSizeInput.selectedHighlightColor = color
                                 apply { controller.applyHighlight(color) }
                             }
                         }
@@ -927,8 +1003,10 @@ private struct FormattingPalette: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor))
+        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor,
+                                          isActive: controller.formattingState.textStyle == style))
         .accessibilityLabel("Apply \(style.rawValue) style")
+        .accessibilityValue(controller.formattingState.textStyle == style ? "Selected" : "")
     }
 
     private func listButton(
@@ -949,8 +1027,10 @@ private struct FormattingPalette: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor))
+        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor,
+                                          isActive: controller.formattingState.listStyle == style))
         .accessibilityLabel(title)
+        .accessibilityValue(controller.formattingState.listStyle == style ? "Selected" : "")
     }
 
     private func alignmentButton(
@@ -964,17 +1044,18 @@ private struct FormattingPalette: View {
             Image(systemName: symbol)
                 .frame(width: 34, height: 28)
         }
-        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor))
+        .buttonStyle(PaletteRowButtonStyle(accent: preferences.accentColor,
+                                          isActive: controller.formattingState.alignment == alignment))
         .help(label)
         .accessibilityLabel(label)
+        .accessibilityValue(controller.formattingState.alignment == alignment ? "Selected" : "")
     }
 
     private func apply(_ action: () -> Void) {
         commitPendingFontSize()
-        controller.restorePaletteSelection()
-        action()
-        controller.rememberPaletteSelection()
-        controller.revealPaletteResult()
+        controller.applyPaletteAction(action)
+        InteractionHaptics.shared.play(.formatApplied,
+                                        enabled: preferences.hapticFeedbackEnabled)
         syncFontSize()
     }
 
@@ -994,6 +1075,7 @@ private struct FormattingPalette: View {
         controller.restorePaletteSelection()
         controller.setFontSize(CGFloat(size))
         controller.rememberPaletteSelection()
+        controller.refreshFormattingState()
     }
 
     private func syncFontSize() {
@@ -1003,7 +1085,6 @@ private struct FormattingPalette: View {
 
 private final class FontSizeInputModel: ObservableObject {
     @Published var text = ""
-    @Published var selectedHighlightColor: RichTextEditorController.HighlightColor = .yellow
 }
 
 private struct HighlightSwatchButton: View {
@@ -1042,6 +1123,8 @@ private struct PaletteFormatButton: View {
     let font: Font
     let underline: Bool
     let strikethrough: Bool
+    let isActive: Bool
+    let accent: Color
     let action: () -> Void
 
     init(
@@ -1050,6 +1133,8 @@ private struct PaletteFormatButton: View {
         font: Font,
         underline: Bool = false,
         strikethrough: Bool = false,
+        isActive: Bool,
+        accent: Color,
         action: @escaping () -> Void
     ) {
         self.label = label
@@ -1058,16 +1143,21 @@ private struct PaletteFormatButton: View {
         self.font = font
         self.underline = underline
         self.strikethrough = strikethrough
+        self.isActive = isActive
+        self.accent = accent
         self.action = action
     }
 
-    init(label: String, symbol: String, action: @escaping () -> Void) {
+    init(label: String, symbol: String, isActive: Bool, accent: Color,
+         action: @escaping () -> Void) {
         self.label = label
         text = nil
         self.symbol = symbol
         font = .headline
         underline = false
         strikethrough = false
+        self.isActive = isActive
+        self.accent = accent
         self.action = action
     }
 
@@ -1076,35 +1166,49 @@ private struct PaletteFormatButton: View {
             Group {
                 if let symbol {
                     Image(systemName: symbol)
+                        .font(.system(size: 14, weight: .semibold))
                 } else if let text {
                     Text(text)
                         .font(font)
                         .underline(underline)
-                        .strikethrough(strikethrough)
+                        .overlay {
+                            if strikethrough {
+                                Capsule()
+                                    .fill(isActive ? accent : Color.primary)
+                                    .frame(width: 18, height: 1.5)
+                            }
+                        }
                 }
             }
-            .frame(width: 28, height: 27)
+            .foregroundStyle(isActive ? accent : Color.primary)
+            .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         }
-        .buttonStyle(PaletteRowButtonStyle(accent: Color.accentColor))
+        .buttonStyle(PaletteRowButtonStyle(accent: accent, isActive: isActive))
         .help(label)
         .accessibilityLabel(label)
+        .accessibilityValue(isActive ? "On" : "Off")
+        .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                   ? nil : .easeOut(duration: 0.14), value: isActive)
     }
 }
 
 private struct PaletteRowButtonStyle: ButtonStyle {
     let accent: Color
+    var isActive = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(configuration.isPressed ? accent.opacity(0.20) : Color.primary.opacity(0.055))
+                    .fill(configuration.isPressed || isActive
+                          ? accent.opacity(isActive ? 0.20 : 0.15)
+                          : Color.primary.opacity(0.055))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    .stroke(isActive ? accent.opacity(0.55) : Color.primary.opacity(0.08), lineWidth: 0.5)
             }
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }

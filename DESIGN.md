@@ -11,7 +11,7 @@ Reading this as: a native personal quick-capture utility for a keyboard-first Ma
 ## Palette
 
 - Native semantic macOS colors form the base so contrast and appearance track the system.
-- One user-selected accent appears only for focus, the selected note, and the pinned state.
+- One user-selected accent appears for focus and selected states, including the active formatting control and the pinned note.
 - No gradients or glow. They would compete with typed content and have no hierarchy purpose here.
 
 ## Typography
@@ -37,6 +37,7 @@ Reading this as: a native personal quick-capture utility for a keyboard-first Ma
 
 - Opening uses a short fade with a four-point settling motion; closing uses a shorter fade so motion clarifies state without slowing capture.
 - Sidebar and search transitions are brief state changes; nothing loops or bounces.
+- Haptics acknowledge a committed action after its visual change. Inline formatting uses a lighter tap; menu formatting and folding use a firmer one.
 
 ## Icons
 

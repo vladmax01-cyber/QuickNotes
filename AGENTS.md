@@ -7,3 +7,4 @@
 - `swift test` currently cannot load XCTest from Command Line Tools alone. Use the project smoke scripts until a full Xcode installation is available; do not report `swift test` as passed.
 - UI tests must use an isolated `QUICK_NOTES_DATA_DIRECTORY`; avoid moving focus to Quick Notes while the user is working unless the user requests a live UI test.
 - Keep the installed app name `Quick Notes` and bundle ID `com.vladikmartinez.quicknotes`. Confirm the installed bundle version and preserve notes when installing an update.
+- Before publishing Quick Notes, verify that this checkout's `origin` is `https://github.com/vladmax01-cyber/QuickNotes.git` and that the intended branch is `main`. Do not create or publish a second repository for this app.

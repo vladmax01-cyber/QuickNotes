@@ -247,7 +247,31 @@ struct SettingsView: View {
             }
 
             SettingsGroup("Behavior") {
-                Toggle("Pin by default", isOn: $preferences.defaultPinned)
+                HStack(spacing: 11) {
+                    Image(systemName: viewModel.isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(preferences.accentColor)
+                        .frame(width: 32, height: 32)
+                        .background(preferences.accentColor.opacity(0.13),
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pin Quick Note")
+                        Text("Keep it visible while you switch apps.")
+                            .font(.caption)
+                            .foregroundStyle(Color.quickNotesSecondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle("Pin Quick Note", isOn: Binding(
+                        get: { viewModel.isPinned },
+                        set: { pinned in
+                            viewModel.isPinned = pinned
+                            preferences.defaultPinned = pinned
+                        }
+                    ))
+                        .labelsHidden()
+                }
+                .accessibilityElement(children: .contain)
                 Toggle("Hide when focus is lost", isOn: $preferences.hideOnFocusLoss)
                 Toggle("Translucent collapsed bar", isOn: $preferences.translucentCollapsedBar)
                 Text("Pinned notes stay visible until you hide them explicitly.")
@@ -310,7 +334,8 @@ struct SettingsView: View {
                         .font(.caption)
                     Spacer()
                     Circle()
-                        .fill(Color(hue: preferences.customAccentHue, saturation: 0.82, brightness: 0.96))
+                        .fill(Color(hue: preferences.customAccentHue, saturation: 0.82,
+                                    brightness: preferences.customAccentBrightness))
                         .frame(width: 18, height: 18)
                 }
                 HueSlider(value: Binding(
@@ -319,7 +344,31 @@ struct SettingsView: View {
                         preferences.customAccentHue = hue
                         preferences.useCustomAccent = true
                     }
-                ))
+                ), brightness: preferences.customAccentBrightness)
+                HStack(spacing: 9) {
+                    Text("Shade")
+                        .font(.caption)
+                        .foregroundStyle(Color.quickNotesSecondaryText)
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.quickNotesSecondaryText)
+                        .accessibilityHidden(true)
+                    Slider(value: Binding(
+                        get: { preferences.customAccentBrightness },
+                        set: { brightness in
+                            preferences.customAccentBrightness = brightness
+                            preferences.useCustomAccent = true
+                        }
+                    ), in: 0.45...0.96)
+                    .tint(Color(hue: preferences.customAccentHue, saturation: 0.82,
+                                brightness: preferences.customAccentBrightness))
+                    .accessibilityLabel("Custom color shade")
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.quickNotesSecondaryText)
+                        .accessibilityHidden(true)
+                }
+                .help("Move left for a darker custom color")
                 Button("Use custom color") {
                     preferences.useCustomAccent = true
                 }
@@ -364,12 +413,20 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+
+            SettingsGroup("Interaction") {
+                Toggle("Haptic feedback", isOn: $preferences.hapticFeedbackEnabled)
+                Text("Light taps for the wide toolbar, firmer taps for formatting and folding. Resizing stays quiet.")
+                    .font(.caption)
+                    .foregroundStyle(Color.quickNotesSecondaryText)
+            }
         }
     }
 }
 
 private struct HueSlider: View {
     @Binding var value: Double
+    let brightness: Double
 
     var body: some View {
         GeometryReader { geometry in
@@ -386,7 +443,7 @@ private struct HueSlider: View {
                 .clipShape(Capsule())
 
                 Circle()
-                    .fill(Color(hue: value, saturation: 0.82, brightness: 0.96))
+                    .fill(Color(hue: value, saturation: 0.82, brightness: brightness))
                     .frame(width: thumbSize, height: thumbSize)
                     .overlay(Circle().stroke(.white, lineWidth: 2))
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
