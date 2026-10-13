@@ -58,7 +58,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 ## Install
 
-Download the [v2.1.1 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/tag/v2.1.1), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
+Download the [v2.1.6 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/download/v2.1.6/QuickNotes-2.1.6.dmg), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
 
 The app is signed locally but has not been notarized by Apple. macOS may ask you to approve opening it in **System Settings → Privacy & Security**.
 
