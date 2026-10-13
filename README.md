@@ -4,11 +4,11 @@
 
 Quick Notes keeps a note close while you work. Open the floating window from the menu bar or with your own keyboard shortcut, write something down, then hide it and carry on. Your notes save automatically on your Mac.
 
-## One idea, any size
+## From ideas to bigger ideas
 
-<img src="docs/screenshots/desktop-preview.jpg" alt="The same Ideas note in small and large Quick Notes windows on a clean dark desktop" width="850">
+<img src="docs/screenshots/desktop-preview.jpg" alt="A compact Ideas note beside a larger Bigger ideas note in Quick Notes" width="850">
 
-*Catch a tiny thought, then give it room to grow. Both windows are real Quick Notes captures of the same note. The clean desktop background is illustrative and shows no personal content.*
+*Catch a thought before it flies away, then make room for bigger ideas. Resize the note to fit the moment.*
 
 ## What it does
 
@@ -37,11 +37,11 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 ## Light and dark
 
 <p>
-  <img src="docs/screenshots/light.png" alt="The same Ideas note in Quick Notes light appearance" width="300">
-  <img src="docs/screenshots/dark.png" alt="The same Ideas note in Quick Notes dark appearance" width="300">
+  <img src="docs/screenshots/light.png" alt="Sunlit plans note in Quick Notes light appearance" width="300">
+  <img src="docs/screenshots/dark.png" alt="Moonlit thoughts note in Quick Notes dark appearance" width="300">
 </p>
 
-*Same little idea, different mood. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
+*A bright thought for daytime, a quiet one for night. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
 
 ## Install
 
