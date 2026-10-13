@@ -75,6 +75,7 @@ enum RichTextSmoke {
 
         try testListsAndSpecialCharacters()
         try testChecklistParagraphs()
+        try testEmptyListEntries()
         try testChecklistMarkerAppearance()
         try testListMarkerAlignmentAndTransitions()
         try testHeadingContinuation()
@@ -96,6 +97,51 @@ enum RichTextSmoke {
         try testInsertionFormattingModes()
         try testMultilineInlineFormats()
         print("All text styles and alignments, inline formats, lists, paste, undo, and image persistence passed")
+    }
+
+    @MainActor
+    private static func testEmptyListEntries() throws {
+        let cases: [(RichTextEditorController.ListStyle, String)] = [
+            (.checklist, "○ "), (.bulleted, "• "), (.numbered, "1. "), (.dashed, "- ")
+        ]
+        for (style, marker) in cases {
+            let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+            textView.isRichText = true
+            let controller = RichTextEditorController()
+            controller.attach(textView)
+            controller.applyList(style)
+            guard textView.string == marker,
+                  textView.selectedRange().location == marker.utf16.count else {
+                throw RichTextSmokeFailure.failed("\(style) could not start in an empty note")
+            }
+            controller.applyList(style)
+            guard textView.string.isEmpty, textView.selectedRange().location == 0 else {
+                throw RichTextSmokeFailure.failed("\(style) could not turn off on an empty line")
+            }
+            textView.string = "Idea\n"
+            textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
+            controller.applyList(style)
+            guard textView.string == "Idea\n" + marker else {
+                throw RichTextSmokeFailure.failed("\(style) could not start after a line break")
+            }
+            if style != .checklist {
+                controller.applyList(.checklist)
+                guard textView.string == "Idea\n○ " else {
+                    throw RichTextSmokeFailure.failed("\(style) could not switch on an empty list entry")
+                }
+            }
+        }
+
+        let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        textView.isRichText = true
+        textView.string = "1. First\n"
+        textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
+        let controller = RichTextEditorController()
+        controller.attach(textView)
+        controller.applyList(.numbered)
+        guard textView.string == "1. First\n2. " else {
+            throw RichTextSmokeFailure.failed("Numbering did not continue on a blank line")
+        }
     }
 
     @MainActor

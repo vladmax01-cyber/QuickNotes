@@ -772,15 +772,9 @@ private struct StrikethroughGlyph: View {
     let color: Color
 
     var body: some View {
-        Text("S")
-            .font(.system(size: 17, weight: .medium))
+        Image(systemName: "strikethrough")
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(color)
-            .overlay {
-                Capsule()
-                    .fill(color)
-                    .frame(width: 20, height: 1)
-                    .offset(y: -0.5)
-            }
             .accessibilityHidden(true)
     }
 }

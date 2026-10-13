@@ -632,15 +632,24 @@ final class RichTextEditorController: ObservableObject {
         }
         let source = textView.string as NSString
         let selection = textView.selectedRange()
-        if case .checklist = style, selection.length == 0 {
+        if selection.length == 0 {
             let paragraph = source.length == 0
                 ? NSRange(location: 0, length: 0)
                 : source.paragraphRange(for: NSRange(location: min(selection.location, source.length), length: 0))
             let line = source.substring(with: contentRange(for: paragraph, in: source))
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                storage.replaceCharacters(in: NSRange(location: paragraph.location, length: 0), with: "○ ")
-                ListMarkerAppearance.normalize(in: storage, paragraphAt: paragraph.location)
-                textView.setSelectedRange(NSRange(location: paragraph.location + 2, length: 0))
+            let oldPrefixLength = recognizedPrefixLength(in: line)
+            let content = (line as NSString).substring(from: oldPrefixLength)
+            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let index = style == .numbered ? nextNumberedIndex(before: paragraph.location, in: source) : 0
+                let marker = hasPrefix(for: style, in: line) ? "" : prefix(for: style, index: index)
+                storage.replaceCharacters(in: NSRange(location: paragraph.location, length: oldPrefixLength),
+                                          with: marker)
+                if marker.isEmpty {
+                    ListMarkerAppearance.clearIndent(in: storage, paragraphAt: paragraph.location)
+                } else {
+                    ListMarkerAppearance.normalize(in: storage, paragraphAt: paragraph.location)
+                }
+                textView.setSelectedRange(NSRange(location: paragraph.location + marker.utf16.count, length: 0))
                 registerFormattingUndo(before, in: textView, name: "Change List")
                 return
             }
@@ -1073,6 +1082,15 @@ final class RichTextEditorController: ObservableObject {
         case .checklist: return "○ "
         case .blockQuote: return ""
         }
+    }
+
+    private func nextNumberedIndex(before location: Int, in source: NSString) -> Int {
+        guard location > 0 else { return 0 }
+        let previous = source.paragraphRange(for: NSRange(location: location - 1, length: 0))
+        let line = source.substring(with: contentRange(for: previous, in: source))
+        guard let marker = line.range(of: #"^\d+\. "#, options: .regularExpression),
+              let number = Int(line[marker].dropLast(2)) else { return 0 }
+        return number
     }
 
     private func hasPrefix(for style: ListStyle, in line: String) -> Bool {
