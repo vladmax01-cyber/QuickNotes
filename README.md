@@ -19,7 +19,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
 - Drag an image out of a note or copy it as a PNG. Restore deleted notes from Recently Deleted in Settings, or empty the trash when you are ready.
 - Turn the New Note shortcut on or off and choose its key combination in Settings.
-- Choose the appearance and accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
+- Follow your Mac's appearance automatically, or choose Light or Dark in Settings. Pick an accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
 
 <img src="docs/screenshots/formatting.png" alt="Quick Notes editor showing a title, highlighted text, a checklist item, and italic text" width="700">
 
@@ -29,9 +29,18 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 *Double-click the header to tuck the note away; double-click the bar to bring it back.*
 
-<img src="docs/shortcuts.svg" alt="Shortcut guide: Control + N shows or hides Quick Note from any app; optional Command + N creates a note while Quick Notes is active" width="700">
+<img src="docs/screenshots/shortcut-settings.png" alt="Quick Notes Shortcut settings showing Control + N to show or hide the note and an optional Command + N shortcut for a new note" width="700">
 
 *Set either key combination in Settings → Shortcut. You can also turn off the New Note shortcut.*
+
+## Light and dark
+
+<p>
+  <img src="docs/screenshots/light.png" alt="The same Ideas note in Quick Notes light appearance" width="260">
+  <img src="docs/screenshots/dark.png" alt="The same Ideas note in Quick Notes dark appearance" width="260">
+</p>
+
+*The same note in both appearances. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
 
 ## Install
 
