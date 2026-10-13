@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="410" viewBox="0 0 1200 410" role="img" aria-labelledby="title desc">
+  <title id="title">Quick Notes keyboard shortcuts</title>
+  <desc id="desc">Control plus N shows or hides Quick Note from any app. Command plus N creates a new note while Quick Notes is active, and can be turned off.</desc>
+  <rect x="1" y="1" width="1198" height="408" rx="28" fill="#24252b" stroke="#50525c" stroke-width="2"/>
+  <text x="48" y="72" fill="#a9aab5" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="2">SETTINGS  /  SHORTCUT</text>
+  <text x="48" y="124" fill="#f3f3f5" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="38" font-weight="700">Choose how you open Quick Notes</text>
+
+  <rect x="42" y="158" width="1116" height="94" rx="18" fill="#33343c"/>
+  <circle cx="88" cy="205" r="21" fill="#679cff"/>
+  <path d="M78 205h20m-10-10v20" stroke="#192b4e" stroke-width="4" stroke-linecap="round"/>
+  <text x="128" y="198" fill="#f3f3f5" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="26" font-weight="650">Show or hide Quick Note</text>
+  <text x="128" y="227" fill="#b8bac4" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="20">Works from any app</text>
+  <rect x="872" y="176" width="145" height="58" rx="12" fill="#1d1e24" stroke="#686b77" stroke-width="2"/>
+  <text x="944" y="213" text-anchor="middle" fill="#f4f4f7" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24" font-weight="600">Control</text>
+  <text x="1032" y="213" fill="#b8bac4" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24">+</text>
+  <rect x="1058" y="176" width="70" height="58" rx="12" fill="#1d1e24" stroke="#686b77" stroke-width="2"/>
+  <text x="1093" y="213" text-anchor="middle" fill="#f4f4f7" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24" font-weight="600">N</text>
+
+  <rect x="42" y="270" width="1116" height="94" rx="18" fill="#33343c"/>
+  <circle cx="88" cy="317" r="21" fill="#88d8ba"/>
+  <path d="M77 317h22m-11-11v22" stroke="#194739" stroke-width="4" stroke-linecap="round"/>
+  <text x="128" y="310" fill="#f3f3f5" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="26" font-weight="650">New Note</text>
+  <text x="128" y="339" fill="#b8bac4" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="20">Optional · works while Quick Notes is active</text>
+  <rect x="844" y="288" width="173" height="58" rx="12" fill="#1d1e24" stroke="#686b77" stroke-width="2"/>
+  <text x="930" y="325" text-anchor="middle" fill="#f4f4f7" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24" font-weight="600">Command</text>
+  <text x="1032" y="325" fill="#b8bac4" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24">+</text>
+  <rect x="1058" y="288" width="70" height="58" rx="12" fill="#1d1e24" stroke="#686b77" stroke-width="2"/>
+  <text x="1093" y="325" text-anchor="middle" fill="#f4f4f7" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="24" font-weight="600">N</text>
+</svg>

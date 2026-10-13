@@ -29,9 +29,9 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 *Double-click the header to tuck the note away; double-click the bar to bring it back.*
 
-<img src="docs/screenshots/shortcut-settings.png" alt="Quick Notes shortcut settings with Control + N" width="700">
+<img src="docs/shortcuts.svg" alt="Shortcut guide: Control + N shows or hides Quick Note from any app; optional Command + N creates a note while Quick Notes is active" width="700">
 
-*Set the shortcut in Settings → Shortcut. The example above uses Control + N.*
+*Set either key combination in Settings → Shortcut. You can also turn off the New Note shortcut.*
 
 ## Install
 
