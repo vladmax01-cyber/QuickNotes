@@ -5,11 +5,11 @@
 Quick Notes keeps a note close while you work. Open the floating window from the menu bar or with your own keyboard shortcut, write something down, then hide it and carry on. Your notes save automatically on your Mac.
 
 <p>
-  <img src="docs/screenshots/compact.jpg" alt="Quick Notes in its compact window" width="260">
-  <img src="docs/screenshots/wide.jpg" alt="Quick Notes in a wider window" width="390">
+  <img src="docs/screenshots/compact.png" alt="Quick Notes in its compact window with a sample note titled Ideas" width="260">
+  <img src="docs/screenshots/wide.png" alt="Quick Notes in a wider window with a sample note titled Bigger ideas" width="390">
 </p>
 
-*The actual app at two sizes, using a sample note. No personal desktop or notes are shown.*
+*The app at two sizes, with sample notes and no personal desktop in view.*
 
 ## What it does
 
@@ -19,11 +19,15 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
 - Choose the appearance and accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
 
-<img src="docs/screenshots/compact-bar.jpg" alt="Quick Notes folded into a floating bar" width="136">
+<img src="docs/screenshots/formatting.png" alt="Quick Notes editor showing a title, highlighted text, a checklist item, and italic text" width="700">
+
+*Use the Aa menu for text styles, highlighting, lists, alignment, and font size. This sample shows a title, mint highlight, checklist, and italic text.*
+
+<img src="docs/screenshots/compact-bar.png" alt="Quick Notes folded into a floating bar" width="136">
 
 *Double-click the header to tuck the note away; double-click the bar to bring it back.*
 
-![Quick Notes shortcut settings](docs/screenshots/shortcut-settings.jpg)
+<img src="docs/screenshots/shortcut-settings.png" alt="Quick Notes shortcut settings with Control + N" width="700">
 
 *Set the shortcut in Settings → Shortcut. The example above uses Control + N.*
 
