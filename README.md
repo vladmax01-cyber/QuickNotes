@@ -4,18 +4,11 @@
 
 Quick Notes keeps a note close while you work. Open the floating window from the menu bar or with your own keyboard shortcut, write something down, then hide it and carry on. Your notes save automatically on your Mac.
 
-<p>
-  <img src="docs/screenshots/compact.png" alt="Quick Notes in its compact window with a sample note titled Ideas" width="300">
-  <img src="docs/screenshots/wide.png" alt="Quick Notes in a wider window with a sample note titled Bigger ideas" width="350">
-</p>
+## One idea, any size
 
-*Two examples of the same window. Resize it freely, from a compact note to a roomy writing space that fits your screen.*
+<img src="docs/screenshots/desktop-preview.jpg" alt="The same Ideas note in small and large Quick Notes windows on a clean dark desktop" width="850">
 
-## On your desktop
-
-<img src="docs/screenshots/desktop-preview.jpg" alt="Quick Notes floating over a clean dark desktop with the sample Ideas note" width="850">
-
-*A privacy-safe desktop preview based on a real Quick Notes capture. The background is illustrative and contains no personal desktop content.*
+*Catch a tiny thought, then give it room to grow. Both windows are real Quick Notes captures of the same note. The clean desktop background is illustrative and shows no personal content.*
 
 ## What it does
 
@@ -27,9 +20,11 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Turn the New Note shortcut on or off and choose its key combination in Settings.
 - Follow your Mac's appearance automatically, or choose Light or Dark in Settings. Pick an accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
 
-<img src="docs/screenshots/formatting.png" alt="Quick Notes editor showing a title, highlighted text, a checklist item, and italic text" width="700">
+## Make it yours
 
-*Use the Aa menu for text styles, highlighting, lists, alignment, and font size. This sample shows a title, mint highlight, checklist, and italic text.*
+<img src="docs/screenshots/formatting.png" alt="The Quick Notes Aa formatting menu open beside a note with a title, mint highlight, italic text, and checklist" width="850">
+
+*Open Aa for text styles, highlighting, lists, alignment, and font size. The little reminder uses a title, mint highlight, italic text, and a checklist.*
 
 <img src="docs/screenshots/compact-bar.png" alt="Quick Notes folded into a floating bar" width="180">
 
@@ -46,7 +41,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
   <img src="docs/screenshots/dark.png" alt="The same Ideas note in Quick Notes dark appearance" width="300">
 </p>
 
-*The same note in both appearances. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
+*Same little idea, different mood. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
 
 ## Install
 
