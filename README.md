@@ -1,22 +1,22 @@
 # Quick Notes
 
-Quick Notes es una app nativa para macOS que permite abrir una nota rápida desde la barra de menús o con un atajo de teclado configurable. La nota aparece en una ventana flotante y se guarda localmente de forma automática.
+Quick Notes is a native macOS app for opening a note from the menu bar or with a customizable keyboard shortcut. Notes appear in a floating window and are saved automatically on the Mac.
 
-## Funciones
+## Features
 
-- Editor de texto enriquecido con títulos, listas, resaltado e imágenes.
-- Ventana compacta que se puede fijar y adaptar a la apariencia del sistema.
-- Búsqueda y acceso a notas recientes.
-- Ajustes para el atajo de teclado, la apariencia y el inicio de sesión.
+- Rich text editing with headings, lists, highlighting, and images.
+- A compact window that can be pinned and follows the system appearance.
+- Search and access to recent notes.
+- Settings for the keyboard shortcut, appearance, and launch at login.
 
-## Requisitos
+## Requirements
 
-- macOS 14 o posterior.
-- Xcode y Swift 5.10 o posterior para compilar el código.
+- macOS 14 or later.
+- Xcode and Swift 5.10 or later to build from source.
 
-El repositorio contiene el código fuente y las pruebas. Las notas personales se guardan en el Mac del usuario y no se incluyen aquí.
+This repository contains the source code and tests. Personal notes stay on the user's Mac and are not included here.
 
-## Contribuidores
+## Contributors
 
-- [@vladmax01-cyber](https://github.com/vladmax01-cyber): idea, dirección y propiedad del proyecto.
-- **Codex (OpenAI):** asistencia en implementación, depuración y documentación.
+- [@vladmax01-cyber](https://github.com/vladmax01-cyber): creator, project direction, and owner.
+- **Codex (OpenAI):** assistance with implementation, debugging, and documentation.
