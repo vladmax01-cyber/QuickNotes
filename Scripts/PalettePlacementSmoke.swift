@@ -24,6 +24,27 @@ struct PalettePlacementSmoke {
         precondition(crampedOrigin.x + palette.width <= narrowScreen.maxX)
         precondition(crampedOrigin.y == narrowScreen.minY)
 
+        let observedNote = NSRect(x: 1244, y: 15, width: 287, height: 332)
+        let observedScreen = NSRect(x: 0, y: 0, width: 1710, height: 1080)
+        let popoverWidth: CGFloat = 292
+        let contentWidth: CGFloat = 266
+        let leftX = FormattingPalettePlacement.popoverWindowX(
+            nextTo: observedNote, windowWidth: popoverWidth,
+            contentWidth: contentWidth, side: .left, in: observedScreen
+        )
+        let chromeInset = (popoverWidth - contentWidth) / 2
+        let visibleGap = observedNote.minX + FormattingPalettePlacement.noteContentInset
+            - (leftX + popoverWidth - chromeInset)
+        precondition(abs(visibleGap - FormattingPalettePlacement.gap) < 0.1)
+
+        let rightX = FormattingPalettePlacement.popoverWindowX(
+            nextTo: roomOnRight, windowWidth: popoverWidth,
+            contentWidth: contentWidth, side: .right, in: screen
+        )
+        let rightVisibleGap = rightX + chromeInset
+            - (roomOnRight.maxX - FormattingPalettePlacement.noteContentInset)
+        precondition(abs(rightVisibleGap - FormattingPalettePlacement.gap) < 0.1)
+
         print("Formatting palette placement passed")
     }
 }

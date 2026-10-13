@@ -655,7 +655,11 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
             guard let anchor, let window = anchor.window,
                   let contentView = window.contentView,
                   let coordinator, coordinator.isPresented.wrappedValue,
-                  let popover = coordinator.popover, !popover.isShown else { return }
+                  let popover = coordinator.popover else { return }
+            if popover.isShown {
+                coordinator.alignPopover()
+                return
+            }
             let fontSizeInput = FontSizeInputModel()
             fontSizeInput.text = String(controller.currentFontSize)
             popover.contentViewController = NSHostingController(rootView: FormattingPalette(
@@ -675,6 +679,8 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
                 paletteWidth: paletteWidth,
                 in: screenFrame
             ) == .right
+            coordinator.noteWindow = window
+            coordinator.paletteWidth = paletteWidth
             let edgeRect = NSRect(
                 x: openRight ? contentView.bounds.maxX - 1 : contentView.bounds.minX,
                 y: anchorRect.midY,
@@ -693,13 +699,56 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         var isPresented: Binding<Bool>
         weak var controller: RichTextEditorController?
         var popover: NSPopover?
+        weak var noteWindow: NSWindow?
+        var paletteWidth: CGFloat = 266
+        private var windowObservers: [NSObjectProtocol] = []
 
         init(isPresented: Binding<Bool>, controller: RichTextEditorController) {
             self.isPresented = isPresented
             self.controller = controller
         }
 
+        deinit {
+            removeWindowObservers()
+        }
+
+        func popoverDidShow(_ notification: Notification) {
+            alignPopover()
+            guard let noteWindow else { return }
+            for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+                windowObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: noteWindow, queue: .main
+                ) { [weak self] _ in
+                    DispatchQueue.main.async { self?.alignPopover() }
+                })
+            }
+        }
+
+        func alignPopover() {
+            guard let noteWindow, let popoverWindow = popover?.contentViewController?.view.window else { return }
+            let screenFrame = noteWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? noteWindow.frame
+            let side = FormattingPalettePlacement.side(
+                of: noteWindow.frame, paletteWidth: paletteWidth, in: screenFrame
+            )
+            let x = FormattingPalettePlacement.popoverWindowX(
+                nextTo: noteWindow.frame,
+                windowWidth: popoverWindow.frame.width,
+                contentWidth: paletteWidth,
+                side: side,
+                in: screenFrame
+            )
+            if abs(popoverWindow.frame.minX - x) > 0.5 {
+                popoverWindow.setFrameOrigin(NSPoint(x: x, y: popoverWindow.frame.minY))
+            }
+        }
+
+        private func removeWindowObservers() {
+            for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
+            windowObservers.removeAll()
+        }
+
         func popoverDidClose(_ notification: Notification) {
+            removeWindowObservers()
             controller?.setSelectionPreviewMode(false)
             if isPresented.wrappedValue { isPresented.wrappedValue = false }
         }

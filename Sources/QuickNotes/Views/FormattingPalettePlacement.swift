@@ -7,6 +7,7 @@ enum FormattingPalettePlacement {
     }
 
     static let gap: CGFloat = 6
+    static let noteContentInset: CGFloat = 6
 
     static func side(
         of noteFrame: NSRect,
@@ -38,5 +39,21 @@ enum FormattingPalettePlacement {
             y: min(max(noteFrame.maxY - paletteSize.height, screenFrame.minY),
                    max(screenFrame.minY, screenFrame.maxY - paletteSize.height))
         )
+    }
+
+    static func popoverWindowX(
+        nextTo noteFrame: NSRect,
+        windowWidth: CGFloat,
+        contentWidth: CGFloat,
+        side: Side,
+        in screenFrame: NSRect
+    ) -> CGFloat {
+        let popoverChromeInset = max(0, (windowWidth - contentWidth) / 2)
+        let frameGap = gap - noteContentInset - popoverChromeInset
+        let preferredX = side == .right
+            ? noteFrame.maxX + frameGap
+            : noteFrame.minX - windowWidth - frameGap
+        return min(max(preferredX, screenFrame.minX),
+                   max(screenFrame.minX, screenFrame.maxX - windowWidth))
     }
 }
