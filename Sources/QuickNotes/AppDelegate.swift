@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeSpaceObserver: NSObjectProtocol?
     private var deletedNoteUndoStack: [NoteDeletionRecord] = []
     private var deletedNoteRedoStack: [NoteDeletionRecord] = []
+    private weak var newNoteMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let defaults = appDefaults()
@@ -56,11 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences: preferences,
             launchAtLogin: launchAtLogin,
             viewModel: viewModel,
+            store: store,
             onShortcutRecordingChanged: { [weak self] isRecording in
                 self?.setShortcutRecording(isRecording)
             },
             onShortcutRecorded: { [weak self] shortcut in
                 self?.applyShortcut(shortcut, persist: true)
+            },
+            onNewNoteShortcutRecorded: { [weak self] shortcut in
+                self?.applyNewNoteShortcut(shortcut)
             }
         )
 
@@ -93,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        (editorController?.textView as? EscapeAwareTextView)?.commitPendingChanges?()
         store?.flush()
         hotKeyService?.unregister()
         if let localEventMonitor {
@@ -214,6 +220,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyShortcut(_ shortcut: ShortcutDefinition, persist: Bool) {
+        if shortcut.keyCode == preferences.newNoteShortcut.keyCode,
+           shortcut.carbonModifiers == preferences.newNoteShortcut.carbonModifiers,
+           preferences.newNoteShortcutEnabled {
+            viewModel.shortcutError = "This shortcut is assigned to New Note. Choose another combination."
+            return
+        }
         let prior = registeredShortcut ?? preferences.shortcut
         do {
             try hotKeyService.register(shortcut) { [weak self] in
@@ -237,6 +249,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             settingsController?.show()
         }
+    }
+
+    private func applyNewNoteShortcut(_ shortcut: ShortcutDefinition) {
+        guard shortcut.keyCode != preferences.shortcut.keyCode
+                || shortcut.carbonModifiers != preferences.shortcut.carbonModifiers else {
+            viewModel.shortcutError = "This shortcut shows or hides Quick Note. Choose another combination."
+            return
+        }
+        viewModel.shortcutError = nil
+        preferences.setNewNoteShortcut(shortcut)
+        updateNewNoteMenuShortcut()
     }
 
     private func setShortcutRecording(_ isRecording: Bool) {
@@ -291,6 +314,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         _ = NSApp.setActivationPolicy(preferences.showDockIcon ? .regular : .accessory)
         menuBarController?.setVisible(preferences.showMenuBarIcon)
+        updateNewNoteMenuShortcut()
+    }
+
+    private func updateNewNoteMenuShortcut() {
+        guard let item = newNoteMenuItem else { return }
+        let shortcut = preferences.newNoteShortcut
+        item.keyEquivalent = preferences.newNoteShortcutEnabled && shortcut.keyLabel.count == 1
+            ? shortcut.keyLabel.lowercased() : ""
+        var modifiers: NSEvent.ModifierFlags = []
+        if shortcut.carbonModifiers & 4096 != 0 { modifiers.insert(.control) }
+        if shortcut.carbonModifiers & 2048 != 0 { modifiers.insert(.option) }
+        if shortcut.carbonModifiers & 512 != 0 { modifiers.insert(.shift) }
+        if shortcut.carbonModifiers & 256 != 0 { modifiers.insert(.command) }
+        if shortcut.carbonModifiers & 131072 != 0 { modifiers.insert(.function) }
+        item.keyEquivalentModifierMask = modifiers
     }
 
     private func installLocalKeyboardHandling() {
@@ -316,6 +354,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .intersection(.deviceIndependentFlagsMask)
         let characters = event.characters
 
+        if preferences.newNoteShortcutEnabled,
+           event.keyCode == preferences.newNoteShortcut.keyCode,
+           shortcutModifiers(modifiers) == preferences.newNoteShortcut.carbonModifiers {
+            createNewNote()
+            return true
+        }
+
         if event.keyCode == 53, panelController.isPresented {
             if viewModel.isSearchVisible {
                 viewModel.closeSearch()
@@ -335,9 +380,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return performUndoOrRedo(redo: true)
             }
             switch characters {
-            case "n":
-                createNewNote()
-                return true
             case "f", "k":
                 openSearch()
                 return true
@@ -382,6 +424,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func shortcutModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+        var result: UInt32 = 0
+        if flags.contains(.control) { result |= 4096 }
+        if flags.contains(.option) { result |= 2048 }
+        if flags.contains(.shift) { result |= 512 }
+        if flags.contains(.command) { result |= 256 }
+        if flags.contains(.function) { result |= 131072 }
+        return result
+    }
+
     private func configureApplicationIcon() {
         if let url = Bundle.main.url(forResource: "QuickNotes", withExtension: "icns"),
            let icon = NSImage(contentsOf: url) {
@@ -422,6 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func deleteNote(_ id: UUID) {
+        (editorController.textView as? EscapeAwareTextView)?.commitPendingChanges?()
         guard let record = store.deleteRecording(id) else { return }
         deletedNoteUndoStack.append(record)
         deletedNoteRedoStack.removeAll()
@@ -503,6 +556,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenuItem.submenu = fileMenu
         let new = fileMenu.addItem(withTitle: "New Note", action: #selector(createNewNote), keyEquivalent: "n")
         new.target = self
+        newNoteMenuItem = new
+        updateNewNoteMenuShortcut()
         let search = fileMenu.addItem(withTitle: "Search Notes", action: #selector(openSearch), keyEquivalent: "f")
         search.target = self
         fileMenu.addItem(.separator())

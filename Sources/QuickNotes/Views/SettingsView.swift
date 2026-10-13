@@ -7,6 +7,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case shortcut = "Shortcut"
     case window = "Window"
     case appearance = "Appearance"
+    case trash = "Trash"
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcut: return "keyboard"
         case .window: return "macwindow"
         case .appearance: return "paintpalette"
+        case .trash: return "trash"
         }
     }
 }
@@ -30,9 +32,13 @@ struct SettingsView: View {
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var launchAtLogin: LaunchAtLoginService
     @ObservedObject var viewModel: AppViewModel
+    @ObservedObject var store: NotesStore
     @ObservedObject var navigation: SettingsNavigationModel
     @ObservedObject var shortcutRecorder: ShortcutRecorderState
+    @ObservedObject var newNoteShortcutRecorder: ShortcutRecorderState
     let onShortcutRecorded: (ShortcutDefinition) -> Void
+    let onNewNoteShortcutRecorded: (ShortcutDefinition) -> Void
+    @State private var confirmEmptyTrash = false
 
     var body: some View {
         ZStack {
@@ -73,6 +79,8 @@ struct SettingsView: View {
                                     windowSettings
                                 case .appearance:
                                     appearanceSettings
+                                case .trash:
+                                    trashSettings
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,6 +104,13 @@ struct SettingsView: View {
         .frame(width: 610, height: 452)
         .tint(preferences.accentColor)
         .environment(\.locale, Locale(identifier: "en_US"))
+        .alert("Empty Trash?", isPresented: $confirmEmptyTrash) {
+            Button("Empty Trash", role: .destructive) { _ = store.emptyTrash() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Permanently delete \(store.deletedNotes.count) "
+                 + (store.deletedNotes.count == 1 ? "note" : "notes") + " from this Mac?")
+        }
     }
 
     private var sidebarTint: Color {
@@ -154,9 +169,73 @@ struct SettingsView: View {
                     .foregroundStyle(Color.quickNotesSecondaryText)
             }
 
+            SettingsGroup("New Note") {
+                Toggle("Use a New Note shortcut", isOn: $preferences.newNoteShortcutEnabled)
+                if preferences.newNoteShortcutEnabled {
+                    ShortcutRecorderView(
+                        shortcut: preferences.newNoteShortcut,
+                        state: newNoteShortcutRecorder,
+                        onRecorded: onNewNoteShortcutRecorded,
+                        accessibilityName: "New Note Shortcut"
+                    )
+                    Text("Works while Quick Notes is active. Command + N is the default.")
+                        .font(.caption)
+                        .foregroundStyle(Color.quickNotesSecondaryText)
+                }
+            }
+
             if let error = viewModel.shortcutError {
                 ErrorRow(message: error)
             }
+        }
+    }
+
+    private var trashSettings: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Deleted Notes")
+                        .font(.headline)
+                    Text("Restore a note or remove everything permanently.")
+                        .font(.caption)
+                        .foregroundStyle(Color.quickNotesSecondaryText)
+                }
+                Spacer()
+                Button("Empty Trash…", role: .destructive) { confirmEmptyTrash = true }
+                    .disabled(store.deletedNotes.isEmpty)
+            }
+            if store.deletedNotes.isEmpty {
+                ContentUnavailableView(
+                    "Trash Is Empty",
+                    systemImage: "trash",
+                    description: Text("Deleted notes will appear here.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else {
+                let sorted = store.deletedNotes.sorted { $0.modifiedAt > $1.modifiedAt }
+                LazyVStack(spacing: 0) {
+                    ForEach(sorted) { note in
+                        HStack(spacing: 12) {
+                            Image(systemName: "note.text")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(note.title).lineLimit(1)
+                                Text(note.preview)
+                                    .font(.caption)
+                                    .foregroundStyle(Color.quickNotesSecondaryText)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Restore") { _ = store.restoreDeletedNote(note.id) }
+                                .accessibilityLabel("Restore \(note.title)")
+                        }
+                        .padding(.vertical, 9)
+                        if note.id != sorted.last?.id { Divider() }
+                    }
+                }
+            }
+            if let error = store.storageError { ErrorRow(message: error) }
         }
     }
 

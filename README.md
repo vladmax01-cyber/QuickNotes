@@ -17,6 +17,8 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Move it where you want and resize it to suit your workspace. Quick Notes can remember its position and size, and you can pin it when it needs to stay visible.
 - Double-click the header to fold the note into a small floating bar. Double-click the bar to open it again.
 - Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
+- Drag an image out of a note or copy it as a PNG. Restore deleted notes from Recently Deleted in Settings, or empty the trash when you are ready.
+- Turn the New Note shortcut on or off and choose its key combination in Settings.
 - Choose the appearance and accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
 
 <img src="docs/screenshots/formatting.png" alt="Quick Notes editor showing a title, highlighted text, a checklist item, and italic text" width="700">
@@ -33,7 +35,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 ## Install
 
-Download the [v2.0.1 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/tag/v2.0.1), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
+Download the [v2.1.1 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/tag/v2.1.1), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
 
 The app is signed locally but has not been notarized by Apple. macOS may ask you to approve opening it in **System Settings → Privacy & Security**.
 

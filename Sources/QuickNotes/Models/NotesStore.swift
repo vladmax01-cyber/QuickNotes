@@ -16,16 +16,23 @@ struct NoteDeletionRecord: Equatable {
 @MainActor
 final class NotesStore: ObservableObject {
     private let repository: NotesRepository
+    private let trashRepository: NotesRepository
     private let defaults: UserDefaults
     private var pendingSave: DispatchWorkItem?
+    private var needsSave = false
     private var savingBlockedByLoadError = false
+    private var trashLoadFailed = false
 
     @Published private(set) var notes: [QuickNote] = []
+    @Published private(set) var deletedNotes: [QuickNote] = []
     @Published var selectedNoteID: UUID?
     @Published var storageError: String?
 
     init(repository: NotesRepository, defaults: UserDefaults = .standard) {
         self.repository = repository
+        trashRepository = NotesRepository(
+            fileURL: repository.fileURL.deletingLastPathComponent().appendingPathComponent("trash.json")
+        )
         self.defaults = defaults
 
         do {
@@ -36,8 +43,16 @@ final class NotesStore: ObservableObject {
             storageError = "Notes could not be loaded. The original file was left unchanged."
         }
 
+        do {
+            deletedNotes = try trashRepository.load()
+        } catch {
+            trashLoadFailed = true
+            storageError = "Trash could not be loaded. Its file was left unchanged."
+        }
+
         if notes.isEmpty {
             notes = [QuickNote()]
+            needsSave = true
         }
 
         if let storedID = defaults.string(forKey: "selectedNoteID").flatMap(UUID.init),
@@ -62,8 +77,12 @@ final class NotesStore: ObservableObject {
     }
 
     func updateSelectedContent(text: String, richTextData: Data?) {
-        guard let selectedNoteID,
-              let index = notes.firstIndex(where: { $0.id == selectedNoteID }),
+        guard let selectedNoteID else { return }
+        updateContent(id: selectedNoteID, text: text, richTextData: richTextData)
+    }
+
+    func updateContent(id: UUID, text: String, richTextData: Data?) {
+        guard let index = notes.firstIndex(where: { $0.id == id }),
               notes[index].text != text || notes[index].richTextData != richTextData else { return }
         notes[index].text = text
         notes[index].richTextData = richTextData
@@ -124,6 +143,7 @@ final class NotesStore: ObservableObject {
         let note = notes[originalIndex]
         let selectedNoteIDBeforeDeletion = selectedNoteID
         flush()
+        guard saveTrash(deletedNotes.filter { $0.id != id } + [note]) else { return nil }
         notes.removeAll { $0.id == id }
 
         var generatedReplacementNoteID: UUID?
@@ -141,7 +161,8 @@ final class NotesStore: ObservableObject {
         } else {
             defaults.removeObject(forKey: "selectedNoteID")
         }
-        scheduleSave()
+        needsSave = true
+        _ = saveNow()
         return NoteDeletionRecord(
             note: note,
             originalIndex: originalIndex,
@@ -166,7 +187,46 @@ final class NotesStore: ObservableObject {
         if let selectedNoteID {
             defaults.set(selectedNoteID.uuidString, forKey: "selectedNoteID")
         }
-        scheduleSave()
+        needsSave = true
+        guard saveNow() else { return }
+        _ = saveTrash(deletedNotes.filter { $0.id != record.note.id })
+    }
+
+    @discardableResult
+    func restoreDeletedNote(_ id: UUID) -> Bool {
+        guard let note = deletedNotes.first(where: { $0.id == id }) else { return false }
+        if notes.contains(where: { $0.id == id }) {
+            return saveTrash(deletedNotes.filter { $0.id != id })
+        }
+        flush()
+        if notes.count == 1, notes[0].text.isEmpty, notes[0].richTextData == nil {
+            notes.removeAll()
+        }
+        notes.append(note)
+        selectedNoteID = id
+        defaults.set(id.uuidString, forKey: "selectedNoteID")
+        needsSave = true
+        guard saveNow() else { return false }
+        return saveTrash(deletedNotes.filter { $0.id != id })
+    }
+
+    @discardableResult
+    func emptyTrash() -> Bool {
+        guard !deletedNotes.isEmpty else { return true }
+        return saveTrash([])
+    }
+
+    private func saveTrash(_ updated: [QuickNote]) -> Bool {
+        guard !trashLoadFailed, !savingBlockedByLoadError else { return false }
+        do {
+            try trashRepository.save(updated)
+            deletedNotes = updated
+            storageError = nil
+            return true
+        } catch {
+            storageError = "Trash could not be saved. The notes were left unchanged."
+            return false
+        }
     }
 
     func restore(_ snapshot: NotesStoreSnapshot) {
@@ -182,17 +242,19 @@ final class NotesStore: ObservableObject {
         if let selectedNoteID {
             defaults.set(selectedNoteID.uuidString, forKey: "selectedNoteID")
         }
+        needsSave = true
         saveNow()
     }
 
     func flush() {
         pendingSave?.cancel()
         pendingSave = nil
-        saveNow()
+        if needsSave { saveNow() }
     }
 
     private func scheduleSave() {
         pendingSave?.cancel()
+        needsSave = true
         let workItem = DispatchWorkItem { [weak self] in
             self?.saveNow()
         }
@@ -200,13 +262,17 @@ final class NotesStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
     }
 
-    private func saveNow() {
-        guard !savingBlockedByLoadError else { return }
+    @discardableResult
+    private func saveNow() -> Bool {
+        guard !savingBlockedByLoadError else { return false }
         do {
             try repository.save(notes)
-            storageError = nil
+            needsSave = false
+            if !trashLoadFailed { storageError = nil }
+            return true
         } catch {
             storageError = "Changes could not be saved. Check disk space and permissions."
+            return false
         }
     }
 }

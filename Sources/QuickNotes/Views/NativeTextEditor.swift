@@ -3,17 +3,35 @@ import SwiftUI
 
 final class EscapeAwareTextView: NSTextView {
     var escapeAction: (() -> Void)?
+    var isResizingAttachments = false
+    var commitPendingChanges: (() -> Void)?
+    private var pendingAttachmentResize: DispatchWorkItem?
+    private var attachmentSourceSizes: [ObjectIdentifier: NSSize] = [:]
+    private var imageDragCandidate: (data: Data, point: NSPoint)?
+    private var draggedImageURL: URL?
+    private var selectedImageData: Data?
+    private var isPastingText = false
+
+    func resetAttachmentSizeCache() {
+        attachmentSourceSizes.removeAll(keepingCapacity: true)
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = abs(frame.width - newSize.width) > 1
         super.setFrameSize(newSize)
         if widthChanged {
-            DispatchQueue.main.async { [weak self] in self?.resizeAttachmentsToFit() }
+            pendingAttachmentResize?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.resizeAttachmentsToFit() }
+            pendingAttachmentResize = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         }
     }
 
     override func paste(_ sender: Any?) {
+        isPastingText = true
         super.paste(sender)
+        isPastingText = false
+        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
         resizeAttachmentsToFit()
     }
 
@@ -24,9 +42,16 @@ final class EscapeAwareTextView: NSTextView {
         var updates: [(NSTextAttachment, NSRange)] = []
         storage.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
             guard let attachment = value as? NSTextAttachment else { return }
-            let image = attachment.image
-                ?? attachment.fileWrapper?.regularFileContents.flatMap(NSImage.init(data:))
-            let sourceSize = image?.size ?? attachment.bounds.size
+            let identity = ObjectIdentifier(attachment)
+            let sourceSize: NSSize
+            if let cached = attachmentSourceSizes[identity] {
+                sourceSize = cached
+            } else {
+                let image = attachment.image
+                    ?? attachment.fileWrapper?.regularFileContents.flatMap(NSImage.init(data:))
+                sourceSize = image?.size ?? attachment.bounds.size
+                attachmentSourceSizes[identity] = sourceSize
+            }
             guard sourceSize.width > 0, sourceSize.height > 0 else { return }
             let scale = min(1, availableWidth / sourceSize.width, 360 / sourceSize.height)
             let target = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
@@ -37,11 +62,13 @@ final class EscapeAwareTextView: NSTextView {
             }
         }
         guard !updates.isEmpty else { return }
+        isResizingAttachments = true
         storage.beginEditing()
         for (attachment, range) in updates {
             storage.addAttribute(.attachment, value: attachment, range: range)
         }
         storage.endEditing()
+        isResizingAttachments = false
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -52,7 +79,145 @@ final class EscapeAwareTextView: NSTextView {
             return
         }
         if toggleChecklist(at: point) { return }
+        if let image = imageData(at: point) {
+            selectedImageData = image.data
+            imageDragCandidate = (image.data, point)
+            setSelectedRange(NSRange(location: image.location, length: 1))
+            return
+        }
+        imageDragCandidate = nil
         super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let candidate = imageDragCandidate else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - candidate.point.x, point.y - candidate.point.y) > 4 else { return }
+        imageDragCandidate = nil
+        beginImageDrag(candidate.data, event: event, at: candidate.point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        imageDragCandidate = nil
+        super.mouseUp(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let image = imageData(at: point) else { return super.menu(for: event) }
+        selectedImageData = image.data
+        let menu = NSMenu(title: "Image")
+        let copy = menu.addItem(withTitle: "Copy Image", action: #selector(copySelectedImage), keyEquivalent: "")
+        copy.target = self
+        let save = menu.addItem(withTitle: "Save Image As…", action: #selector(saveSelectedImage), keyEquivalent: "")
+        save.target = self
+        return menu
+    }
+
+    override func copy(_ sender: Any?) {
+        let range = selectedRange()
+        if range.length == 1,
+           let attachment = textStorage?.attribute(.attachment, at: range.location, effectiveRange: nil)
+                as? NSTextAttachment,
+           let data = imageData(for: attachment) {
+            writeImageToPasteboard(data)
+        } else {
+            super.copy(sender)
+        }
+    }
+
+    @objc private func copySelectedImage(_ sender: Any?) {
+        guard let selectedImageData else { return }
+        writeImageToPasteboard(selectedImageData)
+    }
+
+    @objc private func saveSelectedImage(_ sender: Any?) {
+        guard let selectedImageData else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Quick Note Image.png"
+        panel.allowedContentTypes = [.png]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? selectedImageData.write(to: url, options: .atomic)
+    }
+
+    private func writeImageToPasteboard(_ data: Data) {
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setData(data, forType: .png)
+    }
+
+    private func imageData(at point: NSPoint) -> (data: Data, location: Int)? {
+        guard let layoutManager, let textContainer, let storage = textStorage,
+              storage.length > 0 else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer)
+        let location = layoutManager.characterIndexForGlyph(at: glyph)
+        guard location < storage.length,
+              let attachment = storage.attribute(.attachment, at: location, effectiveRange: nil)
+                as? NSTextAttachment else { return nil }
+        let rect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer
+        )
+        guard rect.insetBy(dx: -3, dy: -3).contains(local) else { return nil }
+        guard let data = imageData(for: attachment) else { return nil }
+        return (data, location)
+    }
+
+    private func imageData(for attachment: NSTextAttachment) -> Data? {
+        if let contents = attachment.fileWrapper?.regularFileContents,
+           let image = NSImage(data: contents) {
+            return pngData(for: image) ?? contents
+        }
+        guard let image = attachment.image else { return nil }
+        return pngData(for: image)
+    }
+
+    private func pngData(for image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private func beginImageDrag(_ data: Data, event: NSEvent, at point: NSPoint) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Quick Notes Image Drags", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("Image-\(UUID().uuidString).png")
+            try data.write(to: url, options: .atomic)
+            draggedImageURL = url
+            let pasteboardItem = NSPasteboardItem()
+            pasteboardItem.setData(data, forType: .png)
+            pasteboardItem.setString(url.absoluteString, forType: .fileURL)
+            let item = NSDraggingItem(pasteboardWriter: pasteboardItem)
+            let preview = NSImage(data: data) ?? NSImage(size: NSSize(width: 80, height: 80))
+            let size = NSSize(width: min(preview.size.width, 180), height: min(preview.size.height, 180))
+            item.setDraggingFrame(NSRect(origin: point, size: size), contents: preview)
+            beginDraggingSession(with: [item], event: event, source: self)
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    override func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)
+        -> NSDragOperation {
+        .copy
+    }
+
+    override func draggingSession(
+        _ session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        super.draggingSession(session, endedAt: screenPoint, operation: operation)
+        guard let url = draggedImageURL else { return }
+        draggedImageURL = nil
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 60) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     @discardableResult
@@ -121,7 +286,10 @@ final class EscapeAwareTextView: NSTextView {
 
     @objc func pasteMatchingStyle(_ sender: Any?) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        isPastingText = true
         insertText(text, replacementRange: selectedRange())
+        isPastingText = false
+        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
     }
 
     @objc func pastePlainText(_ sender: Any?) {
@@ -131,7 +299,10 @@ final class EscapeAwareTextView: NSTextView {
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: NSParagraphStyle.default
         ]
+        isPastingText = true
         insertText(NSAttributedString(string: text, attributes: attributes), replacementRange: selectedRange())
+        isPastingText = false
+        if let storage = textStorage { ChecklistMarkerStyle.normalize(in: storage) }
     }
 
     @objc func pasteClipboardImage(_ sender: Any?) {
@@ -228,7 +399,28 @@ final class EscapeAwareTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
+        if let storage = textStorage {
+            if isPastingText {
+                ChecklistMarkerStyle.normalize(in: storage)
+            } else {
+                ChecklistMarkerStyle.normalize(in: storage, paragraphAt: selectedRange().location)
+            }
+        }
+        removeUnderlineFromLineBreaks()
         refreshCenteredTrailingSpaceLayout()
+    }
+
+    private func removeUnderlineFromLineBreaks() {
+        guard let storage = textStorage, storage.length > 0 else { return }
+        let source = storage.string as NSString
+        let location = min(selectedRange().location, source.length)
+        let candidates = [location - 1, location].filter { $0 >= 0 && $0 < source.length }
+        for index in candidates where source.character(at: index) == 10
+            || source.character(at: index) == 13 {
+            if (storage.attribute(.underlineStyle, at: index, effectiveRange: nil) as? Int ?? 0) != 0 {
+                storage.removeAttribute(.underlineStyle, range: NSRange(location: index, length: 1))
+            }
+        }
     }
 
     func refreshCenteredTrailingSpaceLayout() {
@@ -324,7 +516,7 @@ struct NativeTextEditor: NSViewRepresentable {
     let richTextData: Data?
     let focusGeneration: Int
     let controller: RichTextEditorController
-    let onChange: (String, Data?) -> Void
+    let onChange: (UUID, String, Data?) -> Void
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -378,10 +570,17 @@ struct NativeTextEditor: NSViewRepresentable {
         context.coordinator.noteID = noteID
         context.coordinator.lastFocusGeneration = focusGeneration
         context.coordinator.textView = textView
+        textView.commitPendingChanges = { [weak coordinator = context.coordinator] in
+            coordinator?.commitPendingChanges()
+        }
         context.coordinator.applyContent(text: text, richTextData: richTextData)
         scrollView.documentView = textView
         controller.attach(textView)
         return scrollView
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        coordinator.commitPendingChanges()
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
@@ -393,7 +592,9 @@ struct NativeTextEditor: NSViewRepresentable {
         let changedNote = context.coordinator.noteID != noteID
         let changedContent = textView.string != text
             || context.coordinator.lastRichTextData != richTextData
-        if changedNote || (changedContent && !context.coordinator.isApplyingExternalContent) {
+        if changedNote { context.coordinator.commitPendingChanges() }
+        if changedNote || (changedContent && !context.coordinator.hasPendingChanges
+                           && !context.coordinator.isApplyingExternalContent) {
             context.coordinator.noteID = noteID
             context.coordinator.applyContent(text: text, richTextData: richTextData)
             textView.undoManager?.removeAllActions()
@@ -415,9 +616,25 @@ struct NativeTextEditor: NSViewRepresentable {
         var lastFocusGeneration = 0
         var lastRichTextData: Data?
         var isApplyingExternalContent = false
+        private var pendingContentSave: DispatchWorkItem?
+        private var terminationObserver: NSObjectProtocol?
+        var hasPendingChanges: Bool { pendingContentSave != nil }
 
         init(parent: NativeTextEditor) {
             self.parent = parent
+            super.init()
+            terminationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.commitPendingChanges()
+            }
+        }
+
+        deinit {
+            if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+            pendingContentSave?.cancel()
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -431,6 +648,7 @@ struct NativeTextEditor: NSViewRepresentable {
 
             let attributed = decodedContent(text: text, richTextData: richTextData)
             storage.setAttributedString(attributed)
+            (textView as? EscapeAwareTextView)?.resetAttachmentSizeCache()
             (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit()
             textView.typingAttributes = defaultAttributes
             lastRichTextData = richTextData
@@ -443,7 +661,23 @@ struct NativeTextEditor: NSViewRepresentable {
             range editedRange: NSRange,
             changeInLength delta: Int
         ) {
-            guard !isApplyingExternalContent, let textView else { return }
+            guard !isApplyingExternalContent, let textView,
+                  (textView as? EscapeAwareTextView)?.isResizingAttachments != true else { return }
+            pendingContentSave?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.commitPendingChanges() }
+            pendingContentSave = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+            if editedMask.contains(.editedCharacters) {
+                DispatchQueue.main.async { [weak textView] in
+                    (textView as? EscapeAwareTextView)?.refreshCenteredTrailingSpaceLayout()
+                }
+            }
+        }
+
+        func commitPendingChanges() {
+            guard pendingContentSave != nil, let textView, let textStorage = textView.textStorage else { return }
+            pendingContentSave?.cancel()
+            pendingContentSave = nil
             let range = NSRange(location: 0, length: textStorage.length)
             var hasImage = false
             if range.length > 0 {
@@ -458,12 +692,7 @@ struct NativeTextEditor: NSViewRepresentable {
                 ? nil
                 : hasImage ? textView.rtfd(from: range) : textView.rtf(from: range)
             lastRichTextData = data
-            parent.onChange(textView.string, data)
-            if editedMask.contains(.editedCharacters) {
-                DispatchQueue.main.async { [weak textView] in
-                    (textView as? EscapeAwareTextView)?.refreshCenteredTrailingSpaceLayout()
-                }
-            }
+            if let noteID { parent.onChange(noteID, textView.string, data) }
         }
 
         private var defaultAttributes: [NSAttributedString.Key: Any] {
@@ -498,6 +727,8 @@ struct NativeTextEditor: NSViewRepresentable {
                 }
             }
             QuoteParagraphStyle.repairLegacyBlocks(in: content)
+            ChecklistMarkerStyle.normalize(in: content)
+            InlineFormatBoundary.normalize(in: content)
             return content
         }
     }

@@ -101,7 +101,7 @@ struct QuickNoteView: View {
             Button("Delete Note", role: .destructive, action: confirmDeletion)
             Button("Cancel", role: .cancel, action: viewModel.cancelDeletion)
         } message: {
-            Text("This note will be removed from Recent Notes.")
+            Text("You can restore this note from Trash in Settings.")
         }
     }
 
@@ -192,7 +192,6 @@ struct QuickNoteView: View {
                 onMove: { moveToolbarAction(action, offset: $0) },
                 action: onNewNote
             )
-            .keyboardShortcut("n", modifiers: .command)
         case .search:
             HeaderButton(
                 symbol: "magnifyingglass",
@@ -368,7 +367,7 @@ struct QuickNoteView: View {
                     richTextData: note.richTextData,
                     focusGeneration: viewModel.editorFocusGeneration,
                     controller: editorController,
-                    onChange: store.updateSelectedContent,
+                    onChange: store.updateContent,
                     onEscape: escape
                 )
             }

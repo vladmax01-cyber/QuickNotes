@@ -33,6 +33,51 @@ enum QuoteParagraphStyle {
     }
 }
 
+enum ChecklistMarkerStyle {
+    private static let font = NSFont.systemFont(ofSize: 18, weight: .regular)
+
+    static func normalize(in content: NSMutableAttributedString) {
+        let source = content.string as NSString
+        var location = 0
+        while location < source.length {
+            let paragraph = source.paragraphRange(for: NSRange(location: location, length: 0))
+            normalize(in: content, paragraphAt: location)
+            location = NSMaxRange(paragraph)
+        }
+    }
+
+    static func normalize(in content: NSMutableAttributedString, paragraphAt location: Int) {
+        let source = content.string as NSString
+        guard source.length > 0, location <= source.length else { return }
+        let safeLocation = min(location, source.length - 1)
+        let paragraph = source.paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        guard paragraph.length >= 2 else { return }
+        let prefix = source.substring(with: NSRange(location: paragraph.location, length: 2))
+        guard prefix == "○ " || prefix == "◉ " else { return }
+        let marker = NSRange(location: paragraph.location, length: 1)
+        let existing = content.attribute(.font, at: marker.location, effectiveRange: nil) as? NSFont
+        if existing?.fontName != font.fontName || abs((existing?.pointSize ?? 0) - font.pointSize) > 0.1 {
+            content.addAttribute(.font, value: font, range: marker)
+        }
+        content.removeAttribute(.underlineStyle, range: marker)
+        content.removeAttribute(.strikethroughStyle, range: marker)
+        content.removeAttribute(.backgroundColor, range: marker)
+    }
+}
+
+enum InlineFormatBoundary {
+    static func normalize(in content: NSMutableAttributedString) {
+        let source = content.string as NSString
+        for index in 0..<source.length where source.character(at: index) == 10
+            || source.character(at: index) == 13 {
+            let range = NSRange(location: index, length: 1)
+            content.removeAttribute(.underlineStyle, range: range)
+            content.removeAttribute(.strikethroughStyle, range: range)
+            content.removeAttribute(.backgroundColor, range: range)
+        }
+    }
+}
+
 @MainActor
 final class RichTextEditorController {
     enum TextStyle: String, CaseIterable {
@@ -295,6 +340,7 @@ final class RichTextEditorController {
             let line = source.substring(with: contentRange(for: paragraph, in: source))
             if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 storage.replaceCharacters(in: NSRange(location: paragraph.location, length: 0), with: "○ ")
+                ChecklistMarkerStyle.normalize(in: storage, paragraphAt: paragraph.location)
                 textView.setSelectedRange(NSRange(location: paragraph.location + 2, length: 0))
                 registerFormattingUndo(before, in: textView, name: "Change List")
                 return
@@ -309,7 +355,6 @@ final class RichTextEditorController {
 
         let nonemptyParagraphs = selectedParagraphs.filter { range in
             let line = source.substring(with: contentRange(for: range, in: source))
-            guard case .checklist = style else { return true }
             let content = (line as NSString).substring(from: recognizedPrefixLength(in: line))
             return !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -318,6 +363,13 @@ final class RichTextEditorController {
             return hasPrefix(for: style, in: line)
         }
 
+        var ordinal = 0
+        let ordinals = selectedParagraphs.map { range in
+            let line = source.substring(with: contentRange(for: range, in: source))
+            let content = (line as NSString).substring(from: recognizedPrefixLength(in: line))
+            if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { ordinal += 1 }
+            return ordinal
+        }
         var totalDelta = 0
         storage.beginEditing()
         for (index, paragraphRange) in selectedParagraphs.enumerated().reversed() {
@@ -325,19 +377,16 @@ final class RichTextEditorController {
             let line = source.substring(with: contentRange)
             let oldPrefixLength = recognizedPrefixLength(in: line)
             let oldPrefixRange = NSRange(location: contentRange.location, length: oldPrefixLength)
-            let isEmptyChecklistParagraph: Bool
-            if case .checklist = style {
-                let content = (line as NSString).substring(from: oldPrefixLength)
-                isEmptyChecklistParagraph = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            } else {
-                isEmptyChecklistParagraph = false
-            }
-            let replacement = allAlreadyStyled || isEmptyChecklistParagraph ? "" : prefix(for: style, index: index)
+            let content = (line as NSString).substring(from: oldPrefixLength)
+            let isEmptyParagraph = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let replacement = allAlreadyStyled || isEmptyParagraph ? "" : prefix(for: style, index: ordinals[index] - 1)
             if oldPrefixLength == 0 && replacement.isEmpty { continue }
             storage.replaceCharacters(in: oldPrefixRange, with: replacement)
             totalDelta += replacement.utf16.count - oldPrefixLength
         }
         storage.endEditing()
+
+        ChecklistMarkerStyle.normalize(in: storage)
 
         let adjustedLength = max(0, selectedRange.length + totalDelta)
         textView.setSelectedRange(NSRange(location: selectedRange.location, length: adjustedLength))
@@ -427,7 +476,7 @@ final class RichTextEditorController {
 
     func changeFontSize(by delta: CGFloat) {
         transformFont { font in
-            let size = min(48, max(9, font.pointSize + delta))
+            let size = min(72, max(9, font.pointSize + delta))
             return NSFontManager.shared.convert(font, toSize: size)
         }
     }
@@ -456,9 +505,23 @@ final class RichTextEditorController {
         } else {
             characterIndex = nil
         }
-        if let characterIndex, let storage = textView.textStorage,
-           let font = storage.attribute(.font, at: characterIndex, effectiveRange: nil) as? NSFont {
-            return Int(font.pointSize.rounded())
+        if let characterIndex, let storage = textView.textStorage {
+            let paragraph = source.paragraphRange(for: NSRange(location: characterIndex, length: 0))
+            if characterIndex < paragraph.location + 2, paragraph.length >= 2 {
+                let prefix = source.substring(with: NSRange(location: paragraph.location, length: 2))
+                if prefix == "○ " || prefix == "◉ " {
+                    let bodyIndex = paragraph.location + 2
+                    if bodyIndex < source.length && source.character(at: bodyIndex) != 10
+                        && source.character(at: bodyIndex) != 13,
+                       let font = storage.attribute(.font, at: bodyIndex, effectiveRange: nil) as? NSFont {
+                        return Int(font.pointSize.rounded())
+                    }
+                    return Int(NSFont.preferredFont(forTextStyle: .body).pointSize.rounded())
+                }
+            }
+            if let font = storage.attribute(.font, at: characterIndex, effectiveRange: nil) as? NSFont {
+                return Int(font.pointSize.rounded())
+            }
         }
         let font = textView.typingAttributes[.font] as? NSFont
             ?? .preferredFont(forTextStyle: .body)
@@ -488,6 +551,10 @@ final class RichTextEditorController {
     }
 
     private func registerFormattingUndo(_ before: NSAttributedString, in textView: NSTextView, name: String) {
+        if let storage = textView.textStorage {
+            ChecklistMarkerStyle.normalize(in: storage)
+            InlineFormatBoundary.normalize(in: storage)
+        }
         (textView as? EscapeAwareTextView)?.refreshCenteredTrailingSpaceLayout()
         guard let storage = textView.textStorage,
               !before.isEqual(to: storage),
@@ -510,6 +577,8 @@ final class RichTextEditorController {
         }
         undoManager.setActionName(name)
         storage.setAttributedString(snapshot)
+        ChecklistMarkerStyle.normalize(in: storage)
+        InlineFormatBoundary.normalize(in: storage)
         let location = min(selection.location, storage.length)
         textView.setSelectedRange(NSRange(location: location, length: min(selection.length, storage.length - location)))
     }

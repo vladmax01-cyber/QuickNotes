@@ -5,25 +5,34 @@ import QuickNotesCore
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let shortcutRecorder: ShortcutRecorderState
+    private let newNoteShortcutRecorder: ShortcutRecorderState
 
     init(
         preferences: AppPreferences,
         launchAtLogin: LaunchAtLoginService,
         viewModel: AppViewModel,
+        store: NotesStore,
         onShortcutRecordingChanged: @escaping (Bool) -> Void,
-        onShortcutRecorded: @escaping (ShortcutDefinition) -> Void
+        onShortcutRecorded: @escaping (ShortcutDefinition) -> Void,
+        onNewNoteShortcutRecorded: @escaping (ShortcutDefinition) -> Void
     ) {
         let navigation = SettingsNavigationModel()
         let shortcutRecorder = ShortcutRecorderState()
+        let newNoteShortcutRecorder = ShortcutRecorderState()
         shortcutRecorder.onRecordingChanged = onShortcutRecordingChanged
+        newNoteShortcutRecorder.onRecordingChanged = onShortcutRecordingChanged
         self.shortcutRecorder = shortcutRecorder
+        self.newNoteShortcutRecorder = newNoteShortcutRecorder
         let rootView = SettingsView(
             preferences: preferences,
             launchAtLogin: launchAtLogin,
             viewModel: viewModel,
+            store: store,
             navigation: navigation,
             shortcutRecorder: shortcutRecorder,
-            onShortcutRecorded: onShortcutRecorded
+            newNoteShortcutRecorder: newNoteShortcutRecorder,
+            onShortcutRecorded: onShortcutRecorded,
+            onNewNoteShortcutRecorded: onNewNoteShortcutRecorded
         )
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
@@ -48,7 +57,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var isPresented: Bool { window?.isVisible == true }
-    var isRecordingShortcut: Bool { shortcutRecorder.isRecording }
+    var isRecordingShortcut: Bool {
+        shortcutRecorder.isRecording || newNoteShortcutRecorder.isRecording
+    }
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)

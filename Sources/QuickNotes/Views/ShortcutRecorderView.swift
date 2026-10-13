@@ -50,6 +50,7 @@ struct ShortcutRecorderView: View {
     let shortcut: ShortcutDefinition
     @ObservedObject var state: ShortcutRecorderState
     let onRecorded: (ShortcutDefinition) -> Void
+    var accessibilityName = "Global Shortcut"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -83,7 +84,7 @@ struct ShortcutRecorderView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Global Shortcut")
+            .accessibilityLabel(accessibilityName)
             .accessibilityValue(state.isRecording ? "Recording" : shortcut.displayString)
             .accessibilityHint("Press to record a new shortcut")
 

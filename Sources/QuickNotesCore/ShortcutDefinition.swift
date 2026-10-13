@@ -31,4 +31,10 @@ public struct ShortcutDefinition: Codable, Equatable, Sendable {
         carbonModifiers: 4096,
         keyLabel: "N"
     )
+
+    public static let defaultNewNoteShortcut = ShortcutDefinition(
+        keyCode: 45,
+        carbonModifiers: 256,
+        keyLabel: "N"
+    )
 }

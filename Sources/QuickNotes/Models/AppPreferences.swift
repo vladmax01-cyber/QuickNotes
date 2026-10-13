@@ -74,6 +74,8 @@ final class AppPreferences: ObservableObject {
         static let customAccentHue = "customAccentHue"
         static let useCustomAccent = "useCustomAccent"
         static let shortcut = "shortcut"
+        static let newNoteShortcut = "newNoteShortcut"
+        static let newNoteShortcutEnabled = "newNoteShortcutEnabled"
         static let windowTransparency = "windowTransparency"
         static let useGlass = "useGlass"
         static let translucentCollapsedBar = "translucentCollapsedBar"
@@ -124,6 +126,10 @@ final class AppPreferences: ObservableObject {
         }
     }
     @Published private(set) var shortcut: ShortcutDefinition
+    @Published private(set) var newNoteShortcut: ShortcutDefinition
+    @Published var newNoteShortcutEnabled: Bool {
+        didSet { save(newNoteShortcutEnabled, key: Key.newNoteShortcutEnabled) }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -144,7 +150,8 @@ final class AppPreferences: ObservableObject {
             Key.translucentCollapsedBar: true,
             Key.toolbarUsesAccent: true,
             Key.fontSizeControlStyle: FontSizeControlStyle.numeric.rawValue,
-            Key.showFormattingToolbarWhenWide: true
+            Key.showFormattingToolbarWhenWide: true,
+            Key.newNoteShortcutEnabled: true
         ])
 
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -166,6 +173,7 @@ final class AppPreferences: ObservableObject {
             rawValue: defaults.string(forKey: Key.fontSizeControlStyle) ?? ""
         ) ?? .numeric
         showFormattingToolbarWhenWide = defaults.bool(forKey: Key.showFormattingToolbarWhenWide)
+        newNoteShortcutEnabled = defaults.bool(forKey: Key.newNoteShortcutEnabled)
 
         let defaultOrder = ToolbarAction.allCases
         if let data = defaults.data(forKey: Key.toolbarOrder),
@@ -187,12 +195,28 @@ final class AppPreferences: ObservableObject {
                 defaults.set(data, forKey: Key.shortcut)
             }
         }
+
+        if let data = defaults.data(forKey: Key.newNoteShortcut),
+           let decoded = try? JSONDecoder().decode(ShortcutDefinition.self, from: data),
+           decoded.hasPrimaryModifier {
+            newNoteShortcut = decoded
+        } else {
+            newNoteShortcut = .defaultNewNoteShortcut
+        }
     }
 
     func setShortcut(_ shortcut: ShortcutDefinition) {
         self.shortcut = shortcut
         if let data = try? JSONEncoder().encode(shortcut) {
             defaults.set(data, forKey: Key.shortcut)
+        }
+        broadcastChange()
+    }
+
+    func setNewNoteShortcut(_ shortcut: ShortcutDefinition) {
+        newNoteShortcut = shortcut
+        if let data = try? JSONEncoder().encode(shortcut) {
+            defaults.set(data, forKey: Key.newNoteShortcut)
         }
         broadcastChange()
     }

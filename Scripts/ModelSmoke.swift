@@ -37,6 +37,12 @@ enum ModelSmoke {
         guard loaded.first?.text == "Flushed immediately" else {
             throw ModelSmokeFailure.failed("Explicit flush did not persist the current note")
         }
+        let savedAt = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        if let selectedID = store.selectedNoteID { store.select(selectedID) }
+        let afterSelection = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        guard savedAt == afterSelection else {
+            throw ModelSmokeFailure.failed("Selecting an unchanged note rewrote the notes file")
+        }
 
         _ = store.createNote()
         store.updateSelectedText("Second note")
@@ -65,9 +71,13 @@ enum ModelSmoke {
         guard !store.notes.contains(where: { $0.id == deletedID }) else {
             throw ModelSmokeFailure.failed("Deleted note remained in the store")
         }
+        guard store.deletedNotes.contains(where: { $0.id == deletedID }) else {
+            throw ModelSmokeFailure.failed("Deleted note was not moved to Trash")
+        }
         store.restoreDeletion(deletion)
         guard store.notes.contains(where: { $0.id == deletedID }),
-              store.selectedNoteID == deletedID else {
+              store.selectedNoteID == deletedID,
+              !store.deletedNotes.contains(where: { $0.id == deletedID }) else {
             throw ModelSmokeFailure.failed("Deleted note could not be restored")
         }
 
@@ -93,6 +103,21 @@ enum ModelSmoke {
               duplicateID != deletedID,
               store.notes.count == countBeforeDuplicate + 1 else {
             throw ModelSmokeFailure.failed("Note duplication failed")
+        }
+
+        guard store.delete(deletedID),
+              store.restoreDeletedNote(deletedID),
+              store.notes.contains(where: { $0.id == deletedID }) else {
+            throw ModelSmokeFailure.failed("Trash restore did not recover the note")
+        }
+        guard store.delete(deletedID), store.emptyTrash(), store.deletedNotes.isEmpty else {
+            throw ModelSmokeFailure.failed("Empty Trash did not clear deleted notes")
+        }
+        store.flush()
+        let reopened = NotesStore(repository: repository, defaults: defaults)
+        guard reopened.deletedNotes.isEmpty,
+              !reopened.notes.contains(where: { $0.id == deletedID }) else {
+            throw ModelSmokeFailure.failed("Trash state did not persist after reopening")
         }
 
         let corruptURL = directory.appendingPathComponent("corrupt.json")
@@ -138,6 +163,17 @@ enum ModelSmoke {
         let reloadedPreferences = AppPreferences(defaults: shortcutDefaults)
         guard reloadedPreferences.shortcut == customShortcut else {
             throw ModelSmokeFailure.failed("A valid custom shortcut was not preserved")
+        }
+        guard preferences.newNoteShortcutEnabled,
+              preferences.newNoteShortcut == .defaultNewNoteShortcut else {
+            throw ModelSmokeFailure.failed("New Note shortcut defaults were incorrect")
+        }
+        preferences.newNoteShortcutEnabled = false
+        preferences.setNewNoteShortcut(customShortcut)
+        let reloadedNewNotePreferences = AppPreferences(defaults: shortcutDefaults)
+        guard !reloadedNewNotePreferences.newNoteShortcutEnabled,
+              reloadedNewNotePreferences.newNoteShortcut == customShortcut else {
+            throw ModelSmokeFailure.failed("New Note shortcut settings did not persist")
         }
 
         preferences.windowTransparency = 0.87
