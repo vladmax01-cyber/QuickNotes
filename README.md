@@ -26,9 +26,9 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 *Open Aa for text styles, highlighting, lists, alignment, and font size. The little reminder uses a title, mint highlight, italic text, and a checklist.*
 
-<img src="docs/screenshots/compact-bar.png" alt="Quick Notes folded into a floating bar" width="180">
+<img src="docs/screenshots/compact-desktop.jpg" alt="The folded Ideas note floating on a blue desktop background" width="850">
 
-*Double-click the header to tuck the note away; double-click the bar to bring it back.*
+*Tuck Ideas into a floating bar when you need a clear screen. Double-click the bar to bring the note back.*
 
 <img src="docs/screenshots/shortcut-settings.png" alt="Quick Notes Shortcut settings showing Control + N to show or hide the note and an optional Command + N shortcut for a new note" width="700">
 
