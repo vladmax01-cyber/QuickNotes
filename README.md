@@ -28,18 +28,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 ### Open, then tucked away
 
-<table>
-  <tr>
-    <th>Open</th>
-    <th aria-label="becomes">→</th>
-    <th>Folded on your desktop</th>
-  </tr>
-  <tr>
-    <td align="center" valign="middle"><img src="docs/screenshots/compact.png" alt="The Ideas note open at its compact window size" width="280"></td>
-    <td align="center" valign="middle">→</td>
-    <td align="center" valign="middle"><img src="docs/screenshots/compact-desktop.jpg" alt="The same Ideas note folded into a small bar on a clean blue desktop" width="520"></td>
-  </tr>
-</table>
+<img src="docs/screenshots/ideas-open-folded.png" alt="The real Ideas note open at compact size, then folded into a much smaller floating bar" width="760">
 
 *Double-click the header to fold Ideas into a floating bar. Double-click the bar to bring the same note back.*
 

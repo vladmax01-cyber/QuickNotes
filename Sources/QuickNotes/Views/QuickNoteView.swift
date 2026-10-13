@@ -674,11 +674,6 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
                 of: contentView,
                 preferredEdge: openRight ? .maxX : .minX
             )
-            coordinator.observe(window: window)
-            DispatchQueue.main.async { [weak coordinator, weak window] in
-                guard let coordinator, let window else { return }
-                coordinator.positionPopover(nextTo: window)
-            }
         }
     }
 
@@ -686,67 +681,15 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         var isPresented: Binding<Bool>
         weak var controller: RichTextEditorController?
         var popover: NSPopover?
-        private weak var sourceWindow: NSWindow?
-        private var windowObservers: [NSObjectProtocol] = []
 
         init(isPresented: Binding<Bool>, controller: RichTextEditorController) {
             self.isPresented = isPresented
             self.controller = controller
         }
 
-        func observe(window: NSWindow) {
-            sourceWindow = window
-            for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
-            windowObservers = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
-                NotificationCenter.default.addObserver(
-                    forName: name,
-                    object: window,
-                    queue: .main
-                ) { [weak self, weak window] _ in
-                    guard let window else { return }
-                    self?.positionPopover(nextTo: window)
-                }
-            }
-        }
-
-        func positionPopover(nextTo window: NSWindow) {
-            guard let contentView = popover?.contentViewController?.view,
-                  let popoverWindow = contentView.window else { return }
-            contentView.layoutSubtreeIfNeeded()
-            let contentFrame = popoverWindow.convertToScreen(
-                contentView.convert(contentView.bounds, to: nil)
-            )
-            guard contentFrame.width > 0, contentFrame.height > 0 else { return }
-            let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
-            let target = FormattingPalettePlacement.origin(
-                nextTo: window.frame,
-                paletteSize: contentFrame.size,
-                in: screen
-            )
-            popoverWindow.setFrameOrigin(NSPoint(
-                x: popoverWindow.frame.minX + target.x - contentFrame.minX,
-                y: popoverWindow.frame.minY + target.y - contentFrame.minY
-            ))
-        }
-
-        func popoverDidShow(_ notification: Notification) {
-            guard let sourceWindow else { return }
-            DispatchQueue.main.async { [weak self, weak sourceWindow] in
-                guard let sourceWindow else { return }
-                self?.positionPopover(nextTo: sourceWindow)
-            }
-        }
-
         func popoverDidClose(_ notification: Notification) {
             controller?.setSelectionPreviewMode(false)
-            for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
-            windowObservers.removeAll()
-            sourceWindow = nil
             if isPresented.wrappedValue { isPresented.wrappedValue = false }
-        }
-
-        deinit {
-            for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
         }
     }
 }
