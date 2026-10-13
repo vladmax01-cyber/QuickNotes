@@ -9,12 +9,12 @@ Quick Notes keeps a note close while you work. Open the floating window from the
   <img src="docs/screenshots/wide.png" alt="Quick Notes in a wider window with a sample note titled Bigger ideas" width="390">
 </p>
 
-*The app at two sizes, with sample notes and no personal desktop in view.*
+*Two examples of the same window. Resize it freely, from a compact note to a roomy writing space that fits your screen.*
 
 ## What it does
 
 - Bring the note forward from any app with a configurable shortcut or the menu bar. The floating window can appear across Spaces and over full-screen apps.
-- Move and resize it to fit your work. Quick Notes can remember its position and size, and you can pin it when it needs to stay visible.
+- Move it where you want and resize it to suit your workspace. Quick Notes can remember its position and size, and you can pin it when it needs to stay visible.
 - Double-click the header to fold the note into a small floating bar. Double-click the bar to open it again.
 - Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
 - Choose the appearance and accent you like. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
