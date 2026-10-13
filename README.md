@@ -5,11 +5,17 @@
 Quick Notes keeps a note close while you work. Open the floating window from the menu bar or with your own keyboard shortcut, write something down, then hide it and carry on. Your notes save automatically on your Mac.
 
 <p>
-  <img src="docs/screenshots/compact.png" alt="Quick Notes in its compact window with a sample note titled Ideas" width="260">
-  <img src="docs/screenshots/wide.png" alt="Quick Notes in a wider window with a sample note titled Bigger ideas" width="390">
+  <img src="docs/screenshots/compact.png" alt="Quick Notes in its compact window with a sample note titled Ideas" width="300">
+  <img src="docs/screenshots/wide.png" alt="Quick Notes in a wider window with a sample note titled Bigger ideas" width="350">
 </p>
 
 *Two examples of the same window. Resize it freely, from a compact note to a roomy writing space that fits your screen.*
+
+## On your desktop
+
+<img src="docs/screenshots/desktop-preview.jpg" alt="Quick Notes floating over a clean dark desktop with the sample Ideas note" width="850">
+
+*A privacy-safe desktop preview based on a real Quick Notes capture. The background is illustrative and contains no personal desktop content.*
 
 ## What it does
 
@@ -25,7 +31,7 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 *Use the Aa menu for text styles, highlighting, lists, alignment, and font size. This sample shows a title, mint highlight, checklist, and italic text.*
 
-<img src="docs/screenshots/compact-bar.png" alt="Quick Notes folded into a floating bar" width="136">
+<img src="docs/screenshots/compact-bar.png" alt="Quick Notes folded into a floating bar" width="180">
 
 *Double-click the header to tuck the note away; double-click the bar to bring it back.*
 
@@ -36,8 +42,8 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 ## Light and dark
 
 <p>
-  <img src="docs/screenshots/light.png" alt="The same Ideas note in Quick Notes light appearance" width="260">
-  <img src="docs/screenshots/dark.png" alt="The same Ideas note in Quick Notes dark appearance" width="260">
+  <img src="docs/screenshots/light.png" alt="The same Ideas note in Quick Notes light appearance" width="300">
+  <img src="docs/screenshots/dark.png" alt="The same Ideas note in Quick Notes dark appearance" width="300">
 </p>
 
 *The same note in both appearances. Quick Notes can follow your Mac automatically, or you can select Light or Dark in Settings → Appearance.*
