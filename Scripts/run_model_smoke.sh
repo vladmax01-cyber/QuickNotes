@@ -17,6 +17,7 @@ swiftc \
 swiftc \
     "$PROJECT_DIR/Sources/QuickNotes/Models/NotesStore.swift" \
     "$PROJECT_DIR/Sources/QuickNotes/Models/AppPreferences.swift" \
+    "$PROJECT_DIR/Sources/QuickNotes/Services/UpdateChecker.swift" \
     "$PROJECT_DIR/Sources/QuickNotes/MenuBar/MenuBarController.swift" \
     "$SCRIPT_DIR/ModelSmoke.swift" \
     -I "$TEMP_DIR" \

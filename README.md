@@ -15,10 +15,14 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 - Bring the note forward from any app with a configurable shortcut or the menu bar. The floating window can appear across Spaces and over full-screen apps.
 - Move it where you want and resize it to suit your workspace. Quick Notes can remember its position and size, and you can pin it when it needs to stay visible.
 - Double-click the header to fold the note into a small floating bar. Double-click the bar to open it again.
-- Write with headings, lists, highlights, and images. Find older notes with search or the recent notes list.
+- Write with headings, lists, highlights, images, and tables. Paste formatted tables from other apps, or turn Markdown and tab-separated text into a table.
+- Keep the recent notes list open while switching notes; click inside the editor when you're ready to write. Pin important notes above the rest with Option-click or the note's context menu.
+- Copy a note with its formatting and images, or export and share it as a PDF. Text and rich-text export options are also available from the More menu and a note's context menu.
+- Keep your place in longer notes, if you choose to remember each note's reading position. Set a text color in Aa, and choose whether Format stays open while you write.
 - Drag an image out of a note or copy it as a PNG. Restore deleted notes from Recently Deleted in Settings, or empty the trash when you are ready.
 - Turn the New Note shortcut on or off and choose its key combination in Settings.
 - Follow your Mac's appearance automatically, or choose Light or Dark in Settings. Pick an accent you like and choose whether the format buttons use it. Short, restrained transitions accompany opening and collapsing the window, and the app respects Reduce Motion.
+- Check for updates in Settings, or let Quick Notes check automatically. The app shows a small notice when a newer GitHub release is available.
 
 ## Make it yours
 
@@ -47,7 +51,9 @@ Quick Notes keeps a note close while you work. Open the floating window from the
 
 ## Install
 
-Download the [v2.1.11 DMG](https://github.com/vladmax01-cyber/QuickNotes/raw/refs/heads/main/downloads/QuickNotes-2.1.11.dmg), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
+Download the [v2.1.18 DMG](https://github.com/vladmax01-cyber/QuickNotes/releases/download/v2.1.18/QuickNotes-2.1.18.dmg), open it, and drag **Quick Notes.app** to Applications. This build is for Apple Silicon Macs running macOS 14 or later. You do not need Xcode to install it.
+
+See [what changed in v2.1.18](docs/RELEASE_NOTES_2.1.18.md).
 
 The app is signed locally but has not been notarized by Apple. macOS may ask you to approve opening it in **System Settings → Privacy & Security**.
 

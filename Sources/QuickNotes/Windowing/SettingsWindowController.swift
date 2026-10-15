@@ -12,6 +12,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         launchAtLogin: LaunchAtLoginService,
         viewModel: AppViewModel,
         store: NotesStore,
+        updateChecker: UpdateChecker,
         onShortcutRecordingChanged: @escaping (Bool) -> Void,
         onShortcutRecorded: @escaping (ShortcutDefinition) -> Void,
         onNewNoteShortcutRecorded: @escaping (ShortcutDefinition) -> Void
@@ -31,6 +32,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             navigation: navigation,
             shortcutRecorder: shortcutRecorder,
             newNoteShortcutRecorder: newNoteShortcutRecorder,
+            updateChecker: updateChecker,
             onShortcutRecorded: onShortcutRecorded,
             onNewNoteShortcutRecorded: onNewNoteShortcutRecorded
         )

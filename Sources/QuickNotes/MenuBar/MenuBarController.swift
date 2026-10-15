@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: NotesStore
+    private let updateChecker: UpdateChecker
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private var pendingDeleteID: UUID?
@@ -16,8 +17,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onOpenSettings: () -> Void = {}
     var onQuit: () -> Void = {}
 
-    init(store: NotesStore) {
+    init(store: NotesStore, updateChecker: UpdateChecker) {
         self.store = store
+        self.updateChecker = updateChecker
         super.init()
         menu.delegate = self
     }
@@ -80,7 +82,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let open = item("Open Note", action: #selector(selectRecentNote(_:)))
             open.representedObject = note.id.uuidString
             actions.addItem(open)
-            let delete = item("Delete Note…", action: #selector(requestDeleteRecentNote(_:)))
+            let delete = item("Move to Trash", action: #selector(requestDeleteRecentNote(_:)))
             delete.representedObject = note.id.uuidString
             actions.addItem(delete)
             noteItem.submenu = actions
@@ -96,6 +98,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(recentItem)
 
         menu.addItem(.separator())
+        if let release = updateChecker.availableRelease {
+            let update = item("Quick Notes \(release.version) Available…", action: #selector(openUpdate))
+            update.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
+            menu.addItem(update)
+        }
         let settings = item("Settings…", action: #selector(openSettings))
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = [.command]
@@ -113,6 +120,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleQuickNote() { onToggleQuickNote() }
     @objc private func createNote() { onNewNote() }
     @objc private func openSettings() { onOpenSettings() }
+    @objc private func openUpdate() { updateChecker.openRelease() }
     @objc private func quit() { onQuit() }
 
     @objc private func selectRecentNote(_ sender: NSMenuItem) {

@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct ResizeHitSmoke {
     static func main() {
-        _ = NSApplication.shared
+        NSApplication.shared.setActivationPolicy(.prohibited)
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 300),
             styleMask: [.borderless, .resizable],

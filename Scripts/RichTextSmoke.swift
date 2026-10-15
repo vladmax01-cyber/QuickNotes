@@ -8,6 +8,7 @@ enum RichTextSmokeFailure: Error {
 enum RichTextSmoke {
     @MainActor
     static func main() throws {
+        NSApplication.shared.setActivationPolicy(.prohibited)
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
         textView.isRichText = true
         textView.allowsUndo = true
@@ -35,9 +36,14 @@ enum RichTextSmoke {
             throw RichTextSmokeFailure.failed("Bulleted list could not be toggled off")
         }
 
-        NSFontPanel.shared.orderFront(nil)
-        guard NSFontPanel.shared.isVisible else {
-            throw RichTextSmokeFailure.failed("Font panel test setup failed")
+        let allowsForeground = ProcessInfo.processInfo.environment["QUICK_NOTES_ALLOW_FOREGROUND_TESTS"] == "1"
+        if allowsForeground {
+            NSFontPanel.shared.orderFront(nil)
+            guard NSFontPanel.shared.isVisible else {
+                throw RichTextSmokeFailure.failed("Font panel test setup failed")
+            }
+        } else {
+            print("Live font-panel dismissal skipped: foreground is protected")
         }
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         controller.apply(.heading)
@@ -88,6 +94,7 @@ enum RichTextSmoke {
         try testMixedFormattingAndUndo()
         try testCutCopyPaste()
         try testHighlightColorsAndPaletteSelection()
+        try testHighlightBreakCleanup()
         try testNumericFontSize()
         try testAllTextStylesAndAlignments()
         try testFormatBoundariesAndLists()
@@ -532,6 +539,7 @@ enum RichTextSmoke {
         undoController.attach(undoView)
         let editor = NativeTextEditor(
             noteID: UUID(), text: "Centered", richTextData: nil, focusGeneration: 0,
+            showsVerticalScroller: true,
             controller: undoController, onChange: { _, _, _ in }, onEscape: {}
         )
         let coordinator = editor.makeCoordinator()
@@ -724,6 +732,38 @@ enum RichTextSmoke {
         controller.applyPaletteAction(controller.removeHighlight)
         guard textView.textStorage?.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil else {
             throw RichTextSmokeFailure.failed("Remove Highlight did not clear the color")
+        }
+    }
+
+    @MainActor
+    private static func testHighlightBreakCleanup() throws {
+        let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        textView.isRichText = true
+        textView.string = "• First\n• Second"
+        let controller = RichTextEditorController()
+        controller.attach(textView)
+        guard let storage = textView.textStorage else {
+            throw RichTextSmokeFailure.failed("Highlight cleanup had no text storage")
+        }
+        storage.addAttribute(.backgroundColor, value: NSColor.systemYellow,
+                             range: NSRange(location: 0, length: storage.length))
+        let newline = (textView.string as NSString).range(of: "\n").location
+        textView.setSelectedRange(NSRange(location: newline + 1, length: storage.length - newline - 1))
+        controller.applyHighlight(.mint)
+        guard storage.attribute(.backgroundColor, at: newline, effectiveRange: nil) == nil,
+              storage.attribute(.backgroundColor, at: newline + 3, effectiveRange: nil) != nil else {
+            throw RichTextSmokeFailure.failed("Highlight left a colored line between list items")
+        }
+
+        let separators = "A\u{000B}B\u{000C}C\u{0085}D\u{2028}E\u{2029}F"
+        let imported = NSMutableAttributedString(string: separators, attributes: [
+            .backgroundColor: NSColor.systemYellow
+        ])
+        InlineFormatBoundary.normalize(in: imported)
+        for index in 0..<imported.length where index % 2 == 1 {
+            guard imported.attribute(.backgroundColor, at: index, effectiveRange: nil) == nil else {
+                throw RichTextSmokeFailure.failed("Imported line separator retained highlight")
+            }
         }
     }
 
@@ -948,7 +988,8 @@ enum RichTextSmoke {
         }
         let editor = NativeTextEditor(
             noteID: UUID(), text: imported.string, richTextData: importedRTF,
-            focusGeneration: 0, controller: RichTextEditorController(),
+            focusGeneration: 0, showsVerticalScroller: true,
+            controller: RichTextEditorController(),
             onChange: { _, _, _ in }, onEscape: {}
         )
         let restored = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
@@ -1009,6 +1050,7 @@ enum RichTextSmoke {
         }
         let editor = NativeTextEditor(
             noteID: UUID(), text: content.string, richTextData: rtf, focusGeneration: 0,
+            showsVerticalScroller: true,
             controller: RichTextEditorController(), onChange: { _, _, _ in }, onEscape: {}
         )
         let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
@@ -1144,7 +1186,7 @@ enum RichTextSmoke {
         controller.attach(textView)
         let editor = NativeTextEditor(
             noteID: UUID(), text: textView.string, richTextData: nil,
-            focusGeneration: 0, controller: controller,
+            focusGeneration: 0, showsVerticalScroller: true, controller: controller,
             onChange: { _, _, _ in }, onEscape: {}
         )
         let coordinator = editor.makeCoordinator()
@@ -1297,9 +1339,10 @@ enum RichTextSmoke {
         let migrated = NSMutableAttributedString(attributedString: decodedLegacy)
         QuoteParagraphStyle.repairLegacyBlocks(in: migrated)
         let migratedStyle = migrated.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        guard migrated.string == longQuote, migratedStyle?.textBlocks.isEmpty == true,
-              QuoteParagraphStyle.isQuoted(migratedStyle) else {
-            throw RichTextSmokeFailure.failed("Saved legacy quote did not migrate cleanly")
+        // RTF imports a generic block as a real one-cell table. Keep that structure intact.
+        guard migrated.string == longQuote,
+              migratedStyle?.textBlocks.contains(where: { $0 is NSTextTableBlock }) == true else {
+            throw RichTextSmokeFailure.failed("RTF table structure was removed by quote migration")
         }
     }
 
@@ -1595,6 +1638,7 @@ enum RichTextSmoke {
         }
         let editor = NativeTextEditor(
             noteID: UUID(), text: content.string, richTextData: rtf, focusGeneration: 0,
+            showsVerticalScroller: true,
             controller: RichTextEditorController(), onChange: { _, _, _ in }, onEscape: {}
         )
         let textView = EscapeAwareTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))

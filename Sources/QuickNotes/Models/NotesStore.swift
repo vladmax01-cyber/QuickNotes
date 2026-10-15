@@ -64,7 +64,17 @@ final class NotesStore: ObservableObject {
     }
 
     var sortedNotes: [QuickNote] {
-        notes.sorted { $0.modifiedAt > $1.modifiedAt }
+        notes.sorted {
+            if $0.isPinned != $1.isPinned { return $0.isPinned }
+            if $0.modifiedAt != $1.modifiedAt { return $0.modifiedAt > $1.modifiedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+    }
+
+    func toggleNotePin(_ id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].isPinned.toggle()
+        scheduleSave()
     }
 
     var selectedNote: QuickNote? {

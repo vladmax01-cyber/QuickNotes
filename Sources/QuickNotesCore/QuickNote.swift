@@ -6,19 +6,36 @@ public struct QuickNote: Identifiable, Codable, Equatable, Sendable {
     public var richTextData: Data?
     public let createdAt: Date
     public var modifiedAt: Date
+    public var isPinned: Bool
 
     public init(
         id: UUID = UUID(),
         text: String = "",
         richTextData: Data? = nil,
         createdAt: Date = Date(),
-        modifiedAt: Date = Date()
+        modifiedAt: Date = Date(),
+        isPinned: Bool = false
     ) {
         self.id = id
         self.text = text
         self.richTextData = richTextData
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, richTextData, createdAt, modifiedAt, isPinned
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        text = try values.decode(String.self, forKey: .text)
+        richTextData = try values.decodeIfPresent(Data.self, forKey: .richTextData)
+        createdAt = try values.decode(Date.self, forKey: .createdAt)
+        modifiedAt = try values.decode(Date.self, forKey: .modifiedAt)
+        isPinned = try values.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 
     public var title: String {

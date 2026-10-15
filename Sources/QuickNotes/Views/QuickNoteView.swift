@@ -4,10 +4,12 @@ import QuickNotesCore
 
 struct QuickNoteView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isNoteInfoVisible = false
     @ObservedObject var store: NotesStore
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var editorController: RichTextEditorController
+    @ObservedObject var updateChecker: UpdateChecker
 
     let onNewNote: () -> Void
     let onDuplicateNote: (UUID) -> Void
@@ -37,6 +39,33 @@ struct QuickNoteView: View {
                 } else {
                     header
                     Divider().opacity(0.55)
+                    if let release = updateChecker.visibleRelease {
+                        HStack(spacing: 9) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(preferences.accentColor)
+                            Text("Update \(release.version)")
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                                .accessibilityLabel("Quick Notes \(release.version) is ready")
+                            Spacer(minLength: 4)
+                            Button("View") { updateChecker.openRelease() }
+                                .buttonStyle(.plain)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(preferences.accentColor)
+                                .help("View Quick Notes \(release.version) on GitHub")
+                            Button { updateChecker.dismiss() } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help("Dismiss this update notice")
+                            .accessibilityLabel("Dismiss update notice")
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(preferences.accentColor.opacity(0.09))
+                    }
                     if let storageError = store.storageError {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -62,7 +91,8 @@ struct QuickNoteView: View {
                     store: store,
                     preferences: preferences,
                     viewModel: viewModel,
-                    onSelect: selectSearchResult
+                    onSelect: selectSearchResult,
+                    onDelete: requestDeletion
                 )
                 .padding(14)
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
@@ -97,6 +127,14 @@ struct QuickNoteView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quick Notes")
         .environment(\.locale, Locale(identifier: "en_US"))
+        .onExitCommand(perform: escape)
+        .alert("Note Info", isPresented: $isNoteInfoVisible) {
+            Button("Done", role: .cancel) {}
+        } message: {
+            if let note = store.selectedNote {
+                Text("\(wordCount(in: note.text)) words · \(note.text.count) characters\nCreated \(exactDate(note.createdAt))\nEdited \(exactDate(note.modifiedAt))")
+            }
+        }
         .alert("Delete \"\(deletionTargetTitle)\"?", isPresented: deletionAlertBinding) {
             Button("Delete Note", role: .destructive, action: confirmDeletion)
             Button("Cancel", role: .cancel, action: viewModel.cancelDeletion)
@@ -287,22 +325,27 @@ struct QuickNoteView: View {
                     }
                     .transition(inlineControlTransition)
                 }
+                if expandedCount > 0 {
+                    Divider()
+                        .frame(height: 18)
+                        .padding(.horizontal, 1)
+                }
             }
         case .delete:
             HeaderButton(
                 symbol: "trash",
-                label: "Delete Note",
+                label: "Move Note to Trash",
                 tintColor: toolbarIconColor,
                 onMove: { moveToolbarAction(action, offset: $0) }
             ) {
                 if let id = store.selectedNoteID {
-                    viewModel.requestDeletion(of: id)
+                    requestDeletion(id)
                 }
             }
         case .pin:
             HeaderButton(
                 symbol: viewModel.isPinned ? "pin.fill" : "pin",
-                label: viewModel.isPinned ? "Unpin Note" : "Pin Note",
+                label: viewModel.isPinned ? "Stop Keeping Window on Top" : "Keep Window on Top",
                 isActive: viewModel.isPinned,
                 tintColor: toolbarIconColor,
                 onMove: { moveToolbarAction(action, offset: $0) },
@@ -321,17 +364,19 @@ struct QuickNoteView: View {
     private var moreMenu: some View {
         Menu {
             if let note = store.selectedNote {
+                NoteActionsMenu(title: note.title, content: { exportContent(note) })
+                Divider()
                 Button("Duplicate Note") {
                     onDuplicateNote(note.id)
                 }
-                Button("Delete Note…", role: .destructive) {
-                    viewModel.requestDeletion(of: note.id)
+                Button("Move to Trash", role: .destructive) {
+                    requestDeletion(note.id)
                 }
                 Divider()
-                Section("Note Info") {
-                    Text("\(wordCount(in: note.text)) words · \(note.text.count) characters")
-                    Text("Created \(exactDate(note.createdAt))")
-                    Text("Edited \(exactDate(note.modifiedAt))")
+                Button {
+                    isNoteInfoVisible = true
+                } label: {
+                    Label("Note Info…", systemImage: "info.circle")
                 }
                 Divider()
             }
@@ -363,7 +408,9 @@ struct QuickNoteView: View {
                     onSelect: { id in
                         store.select(id)
                     },
-                    onDelete: viewModel.requestDeletion
+                    onDelete: requestDeletion,
+                    onDuplicate: onDuplicateNote,
+                    exportContent: exportContent
                 )
                 .frame(width: 150)
                 .transition(.move(edge: .leading).combined(with: .opacity))
@@ -389,9 +436,16 @@ struct QuickNoteView: View {
                     text: note.text,
                     richTextData: note.richTextData,
                     focusGeneration: viewModel.editorFocusGeneration,
+                    showsVerticalScroller: !viewModel.isCollapseAnimating,
                     controller: editorController,
                     onChange: store.updateContent,
-                    onEscape: escape
+                    onEscape: escape,
+                    rememberReadingPosition: preferences.rememberReadingPosition,
+                    readingPositionDefaults: preferences.readingPositionDefaults,
+                    onEditorInteraction: {
+                        editorController.setSelectionPreviewMode(false)
+                        hideSidebar()
+                    }
                 )
             }
         } else {
@@ -414,6 +468,16 @@ struct QuickNoteView: View {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: 0.12)
     }
 
+    private func exportContent(_ note: QuickNote) -> NSAttributedString {
+        viewModel.isFormatPaletteVisible = false
+        if store.selectedNoteID == note.id, let textView = editorController.textView,
+           let storage = textView.textStorage {
+            (textView as? EscapeAwareTextView)?.commitPendingChanges?()
+            return NSAttributedString(attributedString: storage)
+        }
+        return NoteRichContent.decode(text: note.text, data: note.richTextData)
+    }
+
     private var toolbarExpansionAnimation: Animation? {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? nil : .spring(response: 0.30, dampingFraction: 0.86)
@@ -426,7 +490,7 @@ struct QuickNoteView: View {
     }
 
     private func inlineControlCount(for width: CGFloat) -> Int {
-        [335, 360, 385, 410, 435, 460, 485, 510]
+        [345, 370, 395, 420, 445, 470, 495, 520]
             .prefix(while: { width >= CGFloat($0) }).count
     }
 
@@ -439,7 +503,9 @@ struct QuickNoteView: View {
     }
 
     private func escape() {
-        if viewModel.isSearchVisible {
+        if viewModel.isFormatPaletteVisible {
+            viewModel.isFormatPaletteVisible = false
+        } else if viewModel.isSearchVisible {
             withAnimation(reducedMotionAnimation) {
                 viewModel.closeSearch()
             }
@@ -474,6 +540,18 @@ struct QuickNoteView: View {
             get: { viewModel.isFormatPaletteVisible },
             set: { viewModel.isFormatPaletteVisible = $0 }
         )
+    }
+
+    private func hideSidebar() {
+        withAnimation(reducedMotionAnimation) { viewModel.isSidebarVisible = false }
+    }
+
+    private func requestDeletion(_ id: UUID) {
+        if preferences.confirmNoteDeletion {
+            viewModel.requestDeletion(of: id)
+        } else {
+            onDeleteNote(id)
+        }
     }
 
     private func confirmDeletion() {
@@ -591,7 +669,7 @@ private struct FormatPaletteButton: View {
         .accessibilityLabel("Text Formatting")
         .accessibilityValue(isPresented ? "Open" : "Closed")
         .background {
-            PersistentFormattingPopover(
+            PersistentFormattingPanel(
                 isPresented: $isPresented,
                 controller: controller,
                 preferences: preferences
@@ -620,7 +698,16 @@ private struct FormatPaletteButton: View {
     }
 }
 
-private struct PersistentFormattingPopover: NSViewRepresentable {
+private final class PopoverAnchorView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private final class FormattingPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+private struct PersistentFormattingPanel: NSViewRepresentable {
     @Binding var isPresented: Bool
     let controller: RichTextEditorController
     let preferences: AppPreferences
@@ -629,163 +716,177 @@ private struct PersistentFormattingPopover: NSViewRepresentable {
         Coordinator(isPresented: $isPresented, controller: controller)
     }
 
-    func makeNSView(context: Context) -> NSView {
-        PopoverAnchorView()
-    }
+    func makeNSView(context: Context) -> NSView { PopoverAnchorView() }
 
     func updateNSView(_ anchor: NSView, context: Context) {
         let coordinator = context.coordinator
         coordinator.isPresented = $isPresented
         coordinator.anchorView = anchor
-        if !isPresented {
-            controller.setSelectionPreviewMode(false)
-            coordinator.popover?.close()
-            controller.clearPaletteSelection()
+        coordinator.preferences = preferences
+        guard isPresented else { coordinator.close(); return }
+        if coordinator.panel?.isVisible == true {
+            coordinator.alignPanel()
             return
         }
-        controller.setSelectionPreviewMode(true)
-
-        if coordinator.popover == nil {
-            let popover = NSPopover()
-            popover.behavior = .semitransient
-            popover.animates = false
-            popover.delegate = coordinator
-            coordinator.popover = popover
-        }
-
         DispatchQueue.main.async { [weak anchor, weak coordinator] in
-            guard let anchor, let window = anchor.window,
-                  let contentView = window.contentView,
-                  let coordinator, coordinator.isPresented.wrappedValue,
-                  let popover = coordinator.popover else { return }
-            if popover.isShown {
-                coordinator.alignPopover()
-                return
-            }
-            let fontSizeInput = FontSizeInputModel()
-            fontSizeInput.text = String(controller.currentFontSize)
-            let paletteSize = FormattingPalette.contentSize
-            popover.contentViewController = NSHostingController(rootView: FormattingPalette(
-                controller: controller,
-                preferences: preferences,
-                onClose: { [weak coordinator] in
-                    controller.clearPaletteSelection()
-                    coordinator?.isPresented.wrappedValue = false
+            guard let anchor, let window = anchor.window, let coordinator,
+                  coordinator.isPresented.wrappedValue, coordinator.panel?.isVisible != true else { return }
+            let input = FontSizeInputModel()
+            input.text = String(controller.currentFontSize)
+            let panel = FormattingPanel(contentRect: NSRect(origin: .zero, size: FormattingPalette.contentSize),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            panel.title = "Format"
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.level = .floating
+            panel.isMovableByWindowBackground = false
+            panel.contentViewController = NSHostingController(rootView: FormattingPalette(
+                controller: controller, preferences: preferences,
+                onClose: { [weak coordinator] in coordinator?.isPresented.wrappedValue = false },
+                onPinChanged: { [weak coordinator] pinned in
+                    guard !pinned else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    coordinator?.panel?.makeKey()
                 },
-                fontSizeInput: fontSizeInput
-            ))
-            popover.contentSize = paletteSize
-            let anchorRect = anchor.convert(anchor.bounds, to: contentView)
-            let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
-            let openRight = FormattingPalettePlacement.side(
-                of: window.frame,
-                paletteWidth: paletteSize.width,
-                in: screenFrame
-            ) == .right
+                fontSizeInput: input))
+            coordinator.panel = panel
             coordinator.noteWindow = window
-            coordinator.paletteWidth = paletteSize.width
-            // Compensate for the popover's shadow so its first frame has the final gap.
-            let anchorInset: CGFloat = 13
-            let edgeRect = NSRect(
-                x: openRight ? contentView.bounds.maxX - anchorInset
-                    : contentView.bounds.minX + anchorInset,
-                y: anchorRect.midY,
-                width: 1,
-                height: 1
-            )
-            popover.show(
-                relativeTo: edgeRect,
-                of: contentView,
-                preferredEdge: openRight ? .maxX : .minX
-            )
-            coordinator.alignPopover()
+            coordinator.restoreEditorFocusOnClose = true
+            controller.setSelectionPreviewMode(true)
+            window.addChildWindow(panel, ordered: .above)
+            coordinator.alignPanel()
+            panel.makeKeyAndOrderFront(nil)
+            coordinator.observeWindow()
         }
     }
 
-    final class Coordinator: NSObject, NSPopoverDelegate {
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.close() }
+
+    @MainActor
+    final class Coordinator: NSObject {
         var isPresented: Binding<Bool>
         weak var controller: RichTextEditorController?
-        var popover: NSPopover?
+        var panel: FormattingPanel?
         weak var noteWindow: NSWindow?
         weak var anchorView: NSView?
-        var paletteWidth: CGFloat = 266
-        private var windowObservers: [NSObjectProtocol] = []
-        private var noteClickMonitor: Any?
+        weak var preferences: AppPreferences?
+        var isPinned: Bool { preferences?.formatPalettePinned ?? false }
+        var restoreEditorFocusOnClose = true
+        private var observers: [NSObjectProtocol] = []
+        private var clickMonitor: Any?
+        private var outsideClickMonitor: Any?
+        private var isTrackingMenu = false
 
         init(isPresented: Binding<Bool>, controller: RichTextEditorController) {
             self.isPresented = isPresented
             self.controller = controller
         }
 
-        deinit {
-            removeWindowObservers()
-            removeNoteClickMonitor()
-        }
+        deinit { MainActor.assumeIsolated { removeObservers() } }
 
-        func popoverDidShow(_ notification: Notification) {
-            alignPopover()
-            guard let noteWindow else { return }
-            if noteClickMonitor == nil {
-                noteClickMonitor = NSEvent.addLocalMonitorForEvents(
-                    matching: [.leftMouseDown, .rightMouseDown]
-                ) { [weak self] event in
-                    guard let self, event.window === self.noteWindow else { return event }
-                    if let anchorView = self.anchorView,
-                       anchorView.bounds.contains(anchorView.convert(event.locationInWindow, from: nil)) {
-                        return event
-                    }
-                    self.isPresented.wrappedValue = false
-                    return event
+        func observeWindow() {
+            removeObservers()
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+                [weak self] event in
+                guard let self, self.isPresented.wrappedValue else { return event }
+                let interaction: FormattingPaletteDismissal.Interaction
+                if event.window === self.panel {
+                    interaction = .palette
+                } else if event.window === self.noteWindow {
+                    let onToggle = self.anchorView.map {
+                        $0.bounds.contains($0.convert(event.locationInWindow, from: nil))
+                    } ?? false
+                    interaction = onToggle ? .toggle : .note
+                } else {
+                    interaction = .otherWindow
                 }
+                if FormattingPaletteDismissal.shouldDismiss(pinned: self.isPinned, interaction: interaction) {
+                    self.dismissWithoutChangingFocus()
+                }
+                return event
+            }
+            observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
+                object: panel, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, !self.isPinned, !self.isTrackingMenu,
+                          self.panel?.isKeyWindow == false else { return }
+                    self.dismissWithoutChangingFocus()
+                }
+            })
+            observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isTrackingMenu = true }
+            })
+            observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isTrackingMenu = false }
+            })
+            outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+                [weak self] _ in
+                guard let self, FormattingPaletteDismissal.shouldDismiss(
+                    pinned: self.isPinned, interaction: .outsideApp) else { return }
+                self.dismissWithoutChangingFocus()
             }
             for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
-                windowObservers.append(NotificationCenter.default.addObserver(
-                    forName: name, object: noteWindow, queue: .main
-                ) { [weak self] _ in
-                    DispatchQueue.main.async { self?.alignPopover() }
+                observers.append(NotificationCenter.default.addObserver(forName: name,
+                    object: noteWindow, queue: .main) { [weak self] _ in
+                    DispatchQueue.main.async { self?.alignPanel() }
                 })
             }
+            observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, FormattingPaletteDismissal.shouldDismiss(
+                        pinned: self.isPinned, interaction: .deactivate) else { return }
+                    self.dismissWithoutChangingFocus()
+                }
+            })
         }
 
-        func alignPopover() {
-            guard let noteWindow, let popoverWindow = popover?.contentViewController?.view.window else { return }
-            let screenFrame = noteWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? noteWindow.frame
-            let side = FormattingPalettePlacement.side(
-                of: noteWindow.frame, paletteWidth: paletteWidth, in: screenFrame
-            )
-            let x = FormattingPalettePlacement.popoverWindowX(
-                nextTo: noteWindow.frame,
-                windowWidth: popoverWindow.frame.width,
-                contentWidth: paletteWidth,
-                side: side,
-                in: screenFrame
-            )
-            if abs(popoverWindow.frame.minX - x) > 0.5 {
-                popoverWindow.setFrameOrigin(NSPoint(x: x, y: popoverWindow.frame.minY))
-            }
+        private func dismissWithoutChangingFocus() {
+            restoreEditorFocusOnClose = false
+            isPresented.wrappedValue = false
         }
 
-        private func removeWindowObservers() {
-            for observer in windowObservers { NotificationCenter.default.removeObserver(observer) }
-            windowObservers.removeAll()
+        func alignPanel() {
+            guard let noteWindow, let panel else { return }
+            let screen = noteWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? noteWindow.frame
+            let origin = FormattingPalettePlacement.origin(
+                nextTo: noteWindow.frame.insetBy(dx: 6, dy: 6),
+                paletteSize: FormattingPalette.contentSize, in: screen)
+            if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
         }
 
-        private func removeNoteClickMonitor() {
-            if let noteClickMonitor { NSEvent.removeMonitor(noteClickMonitor) }
-            noteClickMonitor = nil
-        }
-
-        func popoverDidClose(_ notification: Notification) {
-            removeWindowObservers()
-            removeNoteClickMonitor()
+        func close() {
+            removeObservers()
             controller?.setSelectionPreviewMode(false)
-            if isPresented.wrappedValue { isPresented.wrappedValue = false }
+            controller?.clearPaletteSelection()
+            if let panel {
+                let restoreEditorFocus = restoreEditorFocusOnClose && NSApp.isActive && panel.isKeyWindow
+                noteWindow?.removeChildWindow(panel)
+                panel.close()
+                if restoreEditorFocus, let noteWindow, noteWindow.isVisible {
+                    noteWindow.makeKey()
+                    if let textView = controller?.textView { noteWindow.makeFirstResponder(textView) }
+                }
+            }
+            panel = nil
+        }
+
+        private func removeObservers() {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            observers.removeAll()
+            isTrackingMenu = false
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
+            if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+            outsideClickMonitor = nil
         }
     }
-}
-
-private final class PopoverAnchorView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 private struct InlineFormatButton: View {
@@ -822,11 +923,10 @@ private struct InlineFormatButton: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if label == "Strikethrough" {
-                    StrikethroughGlyph(color: isActive ? accent : inactiveColor)
+                if let standardSymbol = FormatControlGlyph.symbol(for: label) {
+                    FormatControlGlyph(symbol: standardSymbol)
                 } else if let symbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: 14, weight: .semibold))
+                    FormatControlGlyph(symbol: symbol)
                 } else if let text {
                     Text(text)
                         .font(.system(size: 15, weight: label == "Bold" ? .bold : .semibold))
@@ -843,17 +943,6 @@ private struct InlineFormatButton: View {
         .accessibilityValue(isActive ? "On" : "Off")
         .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                    ? nil : .easeOut(duration: 0.14), value: isActive)
-    }
-}
-
-private struct StrikethroughGlyph: View {
-    let color: Color
-
-    var body: some View {
-        Image(systemName: "strikethrough")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(color)
-            .accessibilityHidden(true)
     }
 }
 
@@ -877,6 +966,7 @@ private struct FormattingPalette: View {
     @ObservedObject var controller: RichTextEditorController
     @ObservedObject var preferences: AppPreferences
     let onClose: () -> Void
+    let onPinChanged: (Bool) -> Void
     @ObservedObject var fontSizeInput: FontSizeInputModel
 
     private var formatControlColor: Color {
@@ -884,157 +974,245 @@ private struct FormattingPalette: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Format")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Close Formatting")
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text("Format")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    preferences.formatPalettePinned.toggle()
+                    onPinChanged(preferences.formatPalettePinned)
+                    InteractionHaptics.shared.play(.inlineFormatApplied,
+                        enabled: preferences.hapticFeedbackEnabled)
+                } label: {
+                    Image(systemName: preferences.formatPalettePinned ? "pin.fill" : "pin")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(preferences.formatPalettePinned ? preferences.accentColor : .secondary)
+                        .frame(width: 26, height: 26)
+                        .background(preferences.formatPalettePinned ? preferences.accentColor.opacity(0.16) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 7))
+                        .contentShape(Rectangle())
                 }
-
-                HStack(spacing: 6) {
-                    PaletteFormatButton(label: "Bold", text: "B", font: .headline,
-                                        isActive: controller.formattingState.bold,
-                                        accent: preferences.accentColor,
-                                        inactiveColor: formatControlColor) {
-                        apply(controller.toggleBold)
-                    }
-                    PaletteFormatButton(label: "Italic", text: "I", font: .headline.italic(),
-                                        isActive: controller.formattingState.italic,
-                                        accent: preferences.accentColor,
-                                        inactiveColor: formatControlColor) {
-                        apply(controller.toggleItalic)
-                    }
-                    PaletteFormatButton(label: "Underline", text: "U", font: .headline,
-                                        underline: true, isActive: controller.formattingState.underline,
-                                        accent: preferences.accentColor,
-                                        inactiveColor: formatControlColor) {
-                        apply(controller.toggleUnderline)
-                    }
-                    PaletteFormatButton(label: "Strikethrough", text: "S", font: .headline,
-                                        isActive: controller.formattingState.strikethrough,
-                                        accent: preferences.accentColor,
-                                        inactiveColor: formatControlColor) {
-                        apply(controller.toggleStrikethrough)
-                    }
-                    PaletteFormatButton(label: "Highlight", symbol: "highlighter",
-                                        isActive: controller.formattingState.highlight,
-                                        accent: preferences.accentColor,
-                                        inactiveColor: formatControlColor) {
-                        apply(controller.toggleHighlight)
-                    }
+                .buttonStyle(.plain)
+                .help(preferences.formatPalettePinned ? "Unpin Format" : "Keep Format open while editing")
+                .accessibilityLabel("Pin Format")
+                .accessibilityValue(preferences.formatPalettePinned ? "On" : "Off")
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help("Close Format")
+                .accessibilityLabel("Close Format")
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 6) {
+                        PaletteFormatButton(label: "Bold", text: "B", font: .headline,
+                                            isActive: controller.formattingState.bold,
+                                            accent: preferences.accentColor,
+                                            inactiveColor: formatControlColor) {
+                            apply(controller.toggleBold)
+                        }
+                        PaletteFormatButton(label: "Italic", text: "I", font: .headline.italic(),
+                                            isActive: controller.formattingState.italic,
+                                            accent: preferences.accentColor,
+                                            inactiveColor: formatControlColor) {
+                            apply(controller.toggleItalic)
+                        }
+                        PaletteFormatButton(label: "Underline", text: "U", font: .headline,
+                                            underline: true, isActive: controller.formattingState.underline,
+                                            accent: preferences.accentColor,
+                                            inactiveColor: formatControlColor) {
+                            apply(controller.toggleUnderline)
+                        }
+                        PaletteFormatButton(label: "Strikethrough", text: "S", font: .headline,
+                                            isActive: controller.formattingState.strikethrough,
+                                            accent: preferences.accentColor,
+                                            inactiveColor: formatControlColor) {
+                            apply(controller.toggleStrikethrough)
+                        }
+                        PaletteFormatButton(label: "Highlight", symbol: "highlighter",
+                                            isActive: controller.formattingState.highlight,
+                                            accent: preferences.accentColor,
+                                            inactiveColor: formatControlColor) {
+                            apply(controller.toggleHighlight)
+                        }
+                    }
 
-                paletteSection("Highlight") {
-                    HStack(spacing: 7) {
-                        ForEach(RichTextEditorController.HighlightColor.allCases) { color in
-                            HighlightSwatchButton(
-                                color: color,
-                                accent: preferences.accentColor,
-                                isSelected: controller.formattingState.highlight
-                                    && controller.formattingState.highlightColor == color
-                            ) {
-                                apply { controller.applyHighlight(color) }
+                    paletteSection("Highlight") {
+                        HStack(spacing: 7) {
+                            ForEach(RichTextEditorController.HighlightColor.allCases) { color in
+                                HighlightSwatchButton(
+                                    color: color,
+                                    accent: preferences.accentColor,
+                                    isSelected: controller.formattingState.highlight
+                                        && controller.formattingState.highlightColor == color
+                                ) {
+                                    apply { controller.applyHighlight(color) }
+                                    finishHighlightPreview()
+                                }
+                            }
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.16))
+                                .frame(width: 1, height: 18)
+                            Button {
+                                apply(controller.removeHighlight)
+                                finishHighlightPreview()
+                            } label: {
+                                Image(systemName: "eraser")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove Highlight")
+                            .help("Remove Highlight")
+                        }
+                    }
+
+                    paletteSection("Text Style") {
+                        VStack(spacing: 4) {
+                            styleButton(.title, font: .system(size: 26, weight: .bold))
+                            styleButton(.heading, font: .system(size: 20, weight: .semibold))
+                            styleButton(.subheading, font: .system(size: 16, weight: .semibold))
+                            styleButton(.body, font: .system(size: 13))
+                            styleButton(.monostyled, font: .system(size: 13, design: .monospaced))
+                        }
+                    }
+
+                    paletteSection("Text Color") {
+                        HStack(spacing: 7) {
+                            ForEach(RichTextEditorController.TextColor.allCases) { color in
+                                Button {
+                                    apply { controller.applyTextColor(color) }
+                                } label: {
+                                    ZStack {
+                                        if color == .automatic {
+                                            Image(systemName: "textformat")
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundStyle(.primary)
+                                        } else {
+                                            Circle().fill(Color(nsColor: color.nsColor)).frame(width: 15, height: 15)
+                                        }
+                                    }
+                                    .frame(width: 28, height: 28)
+                                    .background(controller.formattingState.textColor == color
+                                        ? preferences.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
+                                        in: RoundedRectangle(cornerRadius: 7))
+                                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(
+                                        controller.formattingState.textColor == color
+                                            ? preferences.accentColor.opacity(0.6) : .clear, lineWidth: 0.7))
+                                }
+                                .buttonStyle(.plain)
+                                .help(color.rawValue)
+                                .accessibilityLabel("Text Color: \(color.rawValue)")
+                                .accessibilityValue(controller.formattingState.textColor == color ? "Selected" : "")
                             }
                         }
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.16))
-                            .frame(width: 1, height: 18)
-                        Button {
-                            apply(controller.removeHighlight)
-                        } label: {
-                            Image(systemName: "eraser")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 30, height: 30)
-                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove Highlight")
-                        .help("Remove Highlight")
                     }
-                }
 
-                paletteSection("Text Style") {
-                    VStack(spacing: 4) {
-                        styleButton(.title, font: .system(size: 26, weight: .bold))
-                        styleButton(.heading, font: .system(size: 20, weight: .semibold))
-                        styleButton(.subheading, font: .system(size: 16, weight: .semibold))
-                        styleButton(.body, font: .system(size: 13))
-                        styleButton(.monostyled, font: .system(size: 13, design: .monospaced))
+                    Menu {
+                        Button("Insert 2 × 2 Table") { apply { controller.insertTable() } }
+                        Button("Insert 3 × 3 Table") { apply { controller.insertTable(rows: 3, columns: 3) } }
+                        Button("Selection to Table") { apply(controller.convertSelectionToTable) }
+                            .disabled(!controller.formattingState.canConvertToTable)
+                        Divider()
+                        Button("Add Row Below Table") { apply(controller.addTableRow) }
+                            .disabled(!controller.formattingState.inTable)
+                        Button("Convert Table to Text") { apply(controller.tableToText) }
+                            .disabled(!controller.formattingState.inTable)
+                    } label: {
+                        Label("Table", systemImage: "tablecells")
                     }
-                }
+                    .menuStyle(.borderlessButton)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .tint(formatControlColor)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityLabel("Table")
+                    .help("Insert a table or convert selected tab-separated or Markdown text")
 
-                paletteSection("Lists and Quotes") {
-                    VStack(spacing: 4) {
-                        listButton("Checklist", symbol: "circle", style: .checklist)
-                        listButton("Bulleted list", symbol: "list.bullet", style: .bulleted)
-                        listButton("Numbered list", symbol: "list.number", style: .numbered)
-                        listButton("Dashed list", symbol: "list.dash", style: .dashed)
-                        listButton("Block quote", symbol: "text.quote", style: .blockQuote)
+                    paletteSection("Lists and Quotes") {
+                        VStack(spacing: 4) {
+                            listButton("Checklist", symbol: "circle", style: .checklist)
+                            listButton("Bulleted list", symbol: "list.bullet", style: .bulleted)
+                            listButton("Numbered list", symbol: "list.number", style: .numbered)
+                            listButton("Dashed list", symbol: "list.dash", style: .dashed)
+                            listButton("Block quote", symbol: "text.quote", style: .blockQuote)
+                        }
                     }
-                }
 
-                paletteSection("Alignment") {
-                    HStack(spacing: 6) {
-                        alignmentButton("text.alignleft", .left, label: "Align Left")
-                        alignmentButton("text.aligncenter", .center, label: "Align Center")
-                        alignmentButton("text.alignright", .right, label: "Align Right")
-                        alignmentButton("text.justify", .justified, label: "Justify")
+                    paletteSection("Alignment") {
+                        HStack(spacing: 6) {
+                            alignmentButton("text.alignleft", .left, label: "Align Left")
+                            alignmentButton("text.aligncenter", .center, label: "Align Center")
+                            alignmentButton("text.alignright", .right, label: "Align Right")
+                            alignmentButton("text.justify", .justified, label: "Justify")
+                        }
                     }
-                }
 
-                HStack(spacing: 8) {
-                    if preferences.fontSizeControlStyle == .numeric {
-                        Text("Size")
-                        Button {
-                            resizeFont(by: -1)
-                        } label: {
-                            Image(systemName: "minus")
+                    HStack(spacing: 8) {
+                        if preferences.fontSizeControlStyle == .numeric {
+                            Text("Size")
+                            Button {
+                                resizeFont(by: -1)
+                            } label: {
+                                Image(systemName: "minus")
+                            }
+                            .accessibilityLabel("Decrease Font Size")
+                            TextField("Size", text: $fontSizeInput.text)
+                                .frame(width: 38)
+                                .multilineTextAlignment(.center)
+                                .onSubmit(commitFontSize)
+                                .accessibilityLabel("Font Size")
+                            Button {
+                                resizeFont(by: 1)
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                            .accessibilityLabel("Increase Font Size")
+                        } else {
+                            Button {
+                                resizeFont(by: -1)
+                            } label: {
+                                Label("Smaller", systemImage: "textformat.size.smaller")
+                            }
+                            Button {
+                                resizeFont(by: 1)
+                            } label: {
+                                Label("Larger", systemImage: "textformat.size.larger")
+                            }
                         }
-                        .accessibilityLabel("Decrease Font Size")
-                        TextField("Size", text: $fontSizeInput.text)
-                            .frame(width: 38)
-                            .multilineTextAlignment(.center)
-                            .onSubmit(commitFontSize)
-                            .accessibilityLabel("Font Size")
-                        Button {
-                            resizeFont(by: 1)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel("Increase Font Size")
-                    } else {
-                        Button {
-                            resizeFont(by: -1)
-                        } label: {
-                            Label("Smaller", systemImage: "textformat.size.smaller")
-                        }
-                        Button {
-                            resizeFont(by: 1)
-                        } label: {
-                            Label("Larger", systemImage: "textformat.size.larger")
+                        Spacer()
+                        Button("Clear") {
+                            apply(controller.clearFormatting)
                         }
                     }
-                    Spacer()
-                    Button("Clear") {
-                        apply(controller.clearFormatting)
-                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
             }
-            .padding(14)
         }
         .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.7))
         .tint(preferences.accentColor)
-        .accessibilityLabel("Text Formatting Options")
+        .accessibilityElement(children: .contain)
+        .onExitCommand(perform: onClose)
         .onDisappear(perform: commitFontSize)
     }
 
@@ -1110,11 +1288,18 @@ private struct FormattingPalette: View {
     }
 
     private func apply(_ action: () -> Void) {
+        controller.setSelectionPreviewMode(true)
         commitPendingFontSize()
         controller.applyPaletteAction(action)
         InteractionHaptics.shared.play(.formatApplied,
                                         enabled: preferences.hapticFeedbackEnabled)
         syncFontSize()
+    }
+
+    private func finishHighlightPreview() {
+        guard !preferences.formatPalettePinned else { return }
+        controller.revealPaletteResult()
+        onClose()
     }
 
     private func resizeFont(by delta: Int) {
@@ -1222,11 +1407,10 @@ private struct PaletteFormatButton: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if label == "Strikethrough" {
-                    StrikethroughGlyph(color: isActive ? accent : inactiveColor)
+                if let standardSymbol = FormatControlGlyph.symbol(for: label) {
+                    FormatControlGlyph(symbol: standardSymbol)
                 } else if let symbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: 14, weight: .semibold))
+                    FormatControlGlyph(symbol: symbol)
                 } else if let text {
                     Text(text)
                         .font(font)
@@ -1277,42 +1461,72 @@ private struct RecentNotesSidebar: View {
     @ObservedObject var store: NotesStore
     let onSelect: (UUID) -> Void
     let onDelete: (UUID) -> Void
+    let onDuplicate: (UUID) -> Void
+    let exportContent: (QuickNote) -> NSAttributedString
 
     var body: some View {
-        List(selection: Binding(
-            get: { store.selectedNoteID },
-            set: { id in
-                if let id { onSelect(id) }
-            }
-        )) {
-            ForEach(store.sortedNotes) { note in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(note.title)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                    if !note.preview.isEmpty {
-                        Text(note.preview)
-                            .font(.caption2)
-                            .foregroundStyle(Color.quickNotesSecondaryText)
-                            .lineLimit(1)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(store.sortedNotes) { note in
+                    Button {
+                        if NSApp.currentEvent?.modifierFlags.contains(.option) == true
+                            || NSEvent.modifierFlags.contains(.option) {
+                            store.toggleNotePin(note.id)
+                        } else {
+                            onSelect(note.id)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 4) {
+                                Text(note.title)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                if note.isPinned {
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            if !note.preview.isEmpty {
+                                Text(note.preview)
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.quickNotesSecondaryText)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            store.selectedNoteID == note.id
+                                ? Color.accentColor.opacity(0.16) : Color.clear
+                        )
+                        .contentShape(Rectangle())
                     }
-                }
-                .padding(.vertical, 4)
-                .tag(note.id)
-                .help(timestampDetails(for: note))
-                .contextMenu {
-                    Button("Delete Note", role: .destructive) {
-                        onDelete(note.id)
+                    .buttonStyle(.plain)
+                    .help(timestampDetails(for: note) + "\nOption-click to pin or unpin")
+                    .contextMenu {
+                        Button { store.toggleNotePin(note.id) } label: {
+                            Label(note.isPinned ? "Unpin Note" : "Pin Note",
+                                  systemImage: note.isPinned ? "pin.slash" : "pin")
+                        }
+                        Divider()
+                        NoteActionsMenu(title: note.title, content: { exportContent(note) })
+                        Button("Duplicate Note") { onDuplicate(note.id) }
+                        Divider()
+                        Button("Move to Trash", role: .destructive) {
+                            onDelete(note.id)
+                        }
                     }
+                    .accessibilityLabel(
+                        (note.isPinned ? "Pinned, " : "")
+                            + (note.preview.isEmpty ? note.title : "\(note.title), \(note.preview)")
+                    )
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(
-                    note.preview.isEmpty ? note.title : "\(note.title), \(note.preview)"
-                )
             }
+            .frame(maxWidth: .infinity)
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.28))
         .accessibilityLabel("Recent Notes")
     }
@@ -1324,11 +1538,40 @@ private struct RecentNotesSidebar: View {
     }
 }
 
+private struct NoteActionsMenu: View {
+    let title: String
+    let content: () -> NSAttributedString
+
+    var body: some View {
+        Button { NoteRichContent.write(content(), to: .general) } label: {
+            Label("Copy Note", systemImage: "doc.on.doc")
+        }
+        Button {
+            let board = NSPasteboard.general
+            board.clearContents()
+            board.setString(NoteRichContent.plainText(content()), forType: .string)
+        } label: {
+            Label("Copy Text Only", systemImage: "doc.plaintext")
+        }
+        Menu {
+            Button("Share PDF…") { NoteExport.share(content(), title: title, asPDF: true) }
+            Button("Share Text…") { NoteExport.share(content(), title: title, asPDF: false) }
+            Divider()
+            Button("Export PDF…") { NoteExport.save(content(), title: title, kind: "pdf") }
+            Button("Export Rich Text with Images…") { NoteExport.save(content(), title: title, kind: "rtfd") }
+            Button("Export Text…") { NoteExport.save(content(), title: title, kind: "txt") }
+        } label: {
+            Label("Share & Export", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
 private struct SearchOverlay: View {
     @ObservedObject var store: NotesStore
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var viewModel: AppViewModel
     let onSelect: (QuickNote) -> Void
+    let onDelete: (UUID) -> Void
 
     private var results: [QuickNote] {
         store.searchResults(for: viewModel.searchQuery)
@@ -1425,9 +1668,9 @@ private struct SearchOverlay: View {
                                         : "Not selected"
                                 )
                                 .contextMenu {
-                                    Button("Delete Note…", role: .destructive) {
+                                    Button("Move to Trash", role: .destructive) {
                                         viewModel.closeSearch()
-                                        viewModel.requestDeletion(of: note.id)
+                                        onDelete(note.id)
                                     }
                                 }
                             }

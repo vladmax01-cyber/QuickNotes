@@ -13,6 +13,7 @@ final class AppViewModel: ObservableObject {
     @Published var pendingDeletionID: UUID?
     @Published var isFormatPaletteVisible = false
     @Published var isCollapsed = false
+    @Published var isCollapseAnimating = false
 
     init(isPinned: Bool) {
         self.isPinned = isPinned

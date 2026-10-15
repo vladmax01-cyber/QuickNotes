@@ -29,19 +29,22 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
     private let store: NotesStore
     private let preferences: AppPreferences
     private let viewModel: AppViewModel
+    private let editorController: RichTextEditorController
     private let defaults: UserDefaults
     private let noteUndoManager = UndoManager()
     private var previousApplication: NSRunningApplication?
     private var isHiding = false
     private var visibilityRevision: UInt = 0
     private var focusLossRevision: UInt = 0
-    private var activeMenus: Set<ObjectIdentifier> = []
+    private var activeMenus: [ObjectIdentifier: NSMenu] = [:]
+    var isTrackingMenu: Bool { !activeMenus.isEmpty }
     private var lastSpaceChangeUptime: TimeInterval = -.infinity
     private let expandedMinimum = NSSize(width: 280, height: 280)
     private let expandedMaximum = NSSize(width: 4096, height: 4096)
     private let collapsedMinimumWidth: CGFloat = 136
     private let collapsedHeight: CGFloat = 44
     private var expandedSize: NSSize?
+    private var collapsedScrollPosition: (noteID: UUID, origin: NSPoint)?
     private var isChangingCollapse = false
 
     var shouldSuppressFocusLoss: () -> Bool = { false }
@@ -51,6 +54,7 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
         preferences: AppPreferences,
         viewModel: AppViewModel,
         editorController: RichTextEditorController,
+        updateChecker: UpdateChecker,
         defaults: UserDefaults = .standard,
         onNewNote: @escaping () -> Void,
         onDuplicateNote: @escaping (UUID) -> Void,
@@ -62,6 +66,7 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
         self.store = store
         self.preferences = preferences
         self.viewModel = viewModel
+        self.editorController = editorController
         self.defaults = defaults
 
         let panel = QuickNotePanel(
@@ -105,6 +110,7 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
             preferences: preferences,
             viewModel: viewModel,
             editorController: editorController,
+            updateChecker: updateChecker,
             onNewNote: onNewNote,
             onDuplicateNote: onDuplicateNote,
             onDeleteNote: onDeleteNote,
@@ -148,6 +154,7 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
             preferences: preferences,
             viewModel: viewModel,
             editorController: editorController,
+            updateChecker: updateChecker,
             onNewNote: onNewNote,
             onDuplicateNote: onDuplicateNote,
             onDeleteNote: onDeleteNote,
@@ -274,6 +281,12 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
         if collapsing {
             persistFrame()
             expandedSize = current.size
+            if let noteID = store.selectedNote?.id,
+               let scrollView = editorController.textView?.enclosingScrollView {
+                collapsedScrollPosition = (noteID, scrollView.contentView.bounds.origin)
+            } else {
+                collapsedScrollPosition = nil
+            }
             viewModel.isFormatPaletteVisible = false
             viewModel.isSearchVisible = false
             let width = collapsedWidth(for: store.selectedNote?.title ?? "Quick Notes", available: current.width)
@@ -290,6 +303,8 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
         }
 
         isChangingCollapse = true
+        editorController.textView?.enclosingScrollView?.verticalScroller?.isHidden = true
+        viewModel.isCollapseAnimating = true
         let finish: () -> Void = { [weak self, weak panel] in
             guard let self, let panel else { return }
             panel.setFrame(target, display: true)
@@ -299,8 +314,10 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
                 panel.minSize = self.expandedMinimum
                 self.expandedSize = nil
                 self.viewModel.focusEditor()
+                self.restoreCollapsedScrollPosition()
             }
             self.isChangingCollapse = false
+            self.viewModel.isCollapseAnimating = false
             self.persistFrame()
         }
 
@@ -428,16 +445,22 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
 
     @objc private func menuDidBeginTracking(_ notification: Notification) {
         guard let menu = notification.object as? NSMenu else { return }
-        activeMenus.insert(ObjectIdentifier(menu))
+        activeMenus[ObjectIdentifier(menu)] = menu
         focusLossRevision &+= 1
     }
 
     @objc private func menuDidEndTracking(_ notification: Notification) {
         guard let menu = notification.object as? NSMenu else { return }
-        activeMenus.remove(ObjectIdentifier(menu))
+        activeMenus.removeValue(forKey: ObjectIdentifier(menu))
         if activeMenus.isEmpty, window?.isKeyWindow == false {
             scheduleFocusLossHide()
         }
+    }
+
+    func dismissTrackedMenus() -> Bool {
+        let menus = Array(activeMenus.values)
+        for menu in menus { menu.cancelTracking() }
+        return !menus.isEmpty
     }
 
     private func scheduleFocusLossHide() {
@@ -519,6 +542,19 @@ final class QuickNotePanelController: NSWindowController, NSWindowDelegate {
         expandedSize = nil
         isChangingCollapse = false
         persistFrame()
+        restoreCollapsedScrollPosition()
+    }
+
+    private func restoreCollapsedScrollPosition() {
+        guard let position = collapsedScrollPosition else { return }
+        collapsedScrollPosition = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.store.selectedNote?.id == position.noteID,
+                  let scrollView = self.editorController.textView?.enclosingScrollView else { return }
+            scrollView.layoutSubtreeIfNeeded()
+            scrollView.contentView.scroll(to: position.origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     private func persistFrame() {

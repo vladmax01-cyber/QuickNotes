@@ -63,10 +63,12 @@ extension Notification.Name {
 final class AppPreferences: ObservableObject {
     private enum Key {
         static let showMenuBarIcon = "showMenuBarIcon"
+        static let automaticallyCheckForUpdates = "automaticallyCheckForUpdates"
         static let showDockIcon = "showDockIcon"
         static let openAtStartup = "openAtStartup"
         static let rememberPosition = "rememberPosition"
         static let rememberSize = "rememberSize"
+        static let rememberReadingPosition = "rememberReadingPosition"
         static let defaultPinned = "defaultPinned"
         static let hideOnFocusLoss = "hideOnFocusLoss"
         static let appearance = "appearance"
@@ -82,6 +84,8 @@ final class AppPreferences: ObservableObject {
         static let translucentCollapsedBar = "translucentCollapsedBar"
         static let toolbarUsesAccent = "toolbarUsesAccent"
         static let formatControlsUseAccent = "formatControlsUseAccent"
+        static let formatPalettePinned = "formatPalettePinned"
+        static let confirmNoteDeletion = "confirmNoteDeletion"
         static let fontSizeControlStyle = "fontSizeControlStyle"
         static let showFormattingToolbarWhenWide = "showFormattingToolbarWhenWide"
         static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
@@ -89,12 +93,19 @@ final class AppPreferences: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    var readingPositionDefaults: UserDefaults { defaults }
 
     @Published var showMenuBarIcon: Bool { didSet { save(showMenuBarIcon, key: Key.showMenuBarIcon) } }
+    @Published var automaticallyCheckForUpdates: Bool {
+        didSet { save(automaticallyCheckForUpdates, key: Key.automaticallyCheckForUpdates) }
+    }
     @Published var showDockIcon: Bool { didSet { save(showDockIcon, key: Key.showDockIcon) } }
     @Published var openAtStartup: Bool { didSet { save(openAtStartup, key: Key.openAtStartup) } }
     @Published var rememberPosition: Bool { didSet { save(rememberPosition, key: Key.rememberPosition) } }
     @Published var rememberSize: Bool { didSet { save(rememberSize, key: Key.rememberSize) } }
+    @Published var rememberReadingPosition: Bool {
+        didSet { save(rememberReadingPosition, key: Key.rememberReadingPosition) }
+    }
     @Published var defaultPinned: Bool { didSet { save(defaultPinned, key: Key.defaultPinned) } }
     @Published var hideOnFocusLoss: Bool { didSet { save(hideOnFocusLoss, key: Key.hideOnFocusLoss) } }
     @Published var appearance: AppearanceMode { didSet { save(appearance.rawValue, key: Key.appearance) } }
@@ -117,6 +128,12 @@ final class AppPreferences: ObservableObject {
     }
     @Published var toolbarUsesAccent: Bool {
         didSet { save(toolbarUsesAccent, key: Key.toolbarUsesAccent) }
+    }
+    @Published var formatPalettePinned: Bool {
+        didSet { save(formatPalettePinned, key: Key.formatPalettePinned) }
+    }
+    @Published var confirmNoteDeletion: Bool {
+        didSet { save(confirmNoteDeletion, key: Key.confirmNoteDeletion) }
     }
     @Published var formatControlsUseAccent: Bool {
         didSet { save(formatControlsUseAccent, key: Key.formatControlsUseAccent) }
@@ -147,10 +164,12 @@ final class AppPreferences: ObservableObject {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
+            Key.automaticallyCheckForUpdates: true,
             Key.showDockIcon: false,
             Key.openAtStartup: false,
             Key.rememberPosition: true,
             Key.rememberSize: true,
+            Key.rememberReadingPosition: true,
             Key.defaultPinned: false,
             Key.hideOnFocusLoss: true,
             Key.appearance: AppearanceMode.system.rawValue,
@@ -163,6 +182,8 @@ final class AppPreferences: ObservableObject {
             Key.translucentCollapsedBar: true,
             Key.toolbarUsesAccent: true,
             Key.formatControlsUseAccent: false,
+            Key.formatPalettePinned: false,
+            Key.confirmNoteDeletion: false,
             Key.fontSizeControlStyle: FontSizeControlStyle.numeric.rawValue,
             Key.showFormattingToolbarWhenWide: true,
             Key.hapticFeedbackEnabled: true,
@@ -170,10 +191,12 @@ final class AppPreferences: ObservableObject {
         ])
 
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
+        automaticallyCheckForUpdates = defaults.bool(forKey: Key.automaticallyCheckForUpdates)
         showDockIcon = defaults.bool(forKey: Key.showDockIcon)
         openAtStartup = defaults.bool(forKey: Key.openAtStartup)
         rememberPosition = defaults.bool(forKey: Key.rememberPosition)
         rememberSize = defaults.bool(forKey: Key.rememberSize)
+        rememberReadingPosition = defaults.bool(forKey: Key.rememberReadingPosition)
         defaultPinned = defaults.bool(forKey: Key.defaultPinned)
         hideOnFocusLoss = defaults.bool(forKey: Key.hideOnFocusLoss)
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -186,6 +209,8 @@ final class AppPreferences: ObservableObject {
         translucentCollapsedBar = defaults.bool(forKey: Key.translucentCollapsedBar)
         toolbarUsesAccent = defaults.bool(forKey: Key.toolbarUsesAccent)
         formatControlsUseAccent = defaults.bool(forKey: Key.formatControlsUseAccent)
+        formatPalettePinned = defaults.bool(forKey: Key.formatPalettePinned)
+        confirmNoteDeletion = defaults.bool(forKey: Key.confirmNoteDeletion)
         fontSizeControlStyle = FontSizeControlStyle(
             rawValue: defaults.string(forKey: Key.fontSizeControlStyle) ?? ""
         ) ?? .numeric

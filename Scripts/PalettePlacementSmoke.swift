@@ -24,6 +24,20 @@ struct PalettePlacementSmoke {
         precondition(crampedOrigin.x + palette.width <= narrowScreen.maxX)
         precondition(crampedOrigin.y == narrowScreen.minY)
 
+        let narrowTallScreen = NSRect(x: 0, y: 0, width: 500, height: 900)
+        let noteWithRoomBelow = NSRect(x: 110, y: 500, width: 280, height: 280)
+        let below = FormattingPalettePlacement.origin(
+            nextTo: noteWithRoomBelow, paletteSize: palette, in: narrowTallScreen)
+        precondition(below.y + palette.height + FormattingPalettePlacement.gap
+                     <= noteWithRoomBelow.minY)
+        precondition(below.x >= narrowTallScreen.minX && below.x + palette.width <= narrowTallScreen.maxX)
+
+        let noteWithRoomAbove = NSRect(x: 110, y: 70, width: 280, height: 280)
+        let above = FormattingPalettePlacement.origin(
+            nextTo: noteWithRoomAbove, paletteSize: palette, in: narrowTallScreen)
+        precondition(above.y >= noteWithRoomAbove.maxY + FormattingPalettePlacement.gap)
+        precondition(above.x >= narrowTallScreen.minX && above.x + palette.width <= narrowTallScreen.maxX)
+
         let observedNote = NSRect(x: 1244, y: 15, width: 287, height: 332)
         let observedScreen = NSRect(x: 0, y: 0, width: 1710, height: 1080)
         let popoverWidth: CGFloat = 292
@@ -45,6 +59,14 @@ struct PalettePlacementSmoke {
             - (roomOnRight.maxX - FormattingPalettePlacement.noteContentInset)
         precondition(abs(rightVisibleGap - FormattingPalettePlacement.gap) < 0.1)
 
-        print("Formatting palette placement passed")
+        var dismissalChecks = 0
+        for pinned in [true, false] {
+            for interaction in FormattingPaletteDismissal.Interaction.allCases {
+                let expected = !pinned && ![.palette, .toggle].contains(interaction)
+                precondition(FormattingPaletteDismissal.shouldDismiss(pinned: pinned, interaction: interaction) == expected)
+                dismissalChecks += 1
+            }
+        }
+        print("Formatting palette placement passed; dismissal policy: \(dismissalChecks) checks")
     }
 }

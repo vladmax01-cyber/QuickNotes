@@ -36,6 +36,7 @@ struct SettingsView: View {
     @ObservedObject var navigation: SettingsNavigationModel
     @ObservedObject var shortcutRecorder: ShortcutRecorderState
     @ObservedObject var newNoteShortcutRecorder: ShortcutRecorderState
+    @ObservedObject var updateChecker: UpdateChecker
     let onShortcutRecorded: (ShortcutDefinition) -> Void
     let onNewNoteShortcutRecorded: (ShortcutDefinition) -> Void
     @State private var confirmEmptyTrash = false
@@ -103,6 +104,9 @@ struct SettingsView: View {
         }
         .frame(width: 610, height: 452)
         .tint(preferences.accentColor)
+        .onChange(of: preferences.automaticallyCheckForUpdates) { _, enabled in
+            if enabled { updateChecker.checkIfNeeded() }
+        }
         .environment(\.locale, Locale(identifier: "en_US"))
         .alert("Empty Trash?", isPresented: $confirmEmptyTrash) {
             Button("Empty Trash", role: .destructive) { _ = store.emptyTrash() }
@@ -148,6 +152,37 @@ struct SettingsView: View {
             SettingsGroup("App Visibility") {
                 Toggle("Show menu bar icon", isOn: $preferences.showMenuBarIcon)
                 Toggle("Show Dock icon", isOn: $preferences.showDockIcon)
+            }
+
+            SettingsGroup("Notes") {
+                Toggle("Confirm before moving notes to Trash", isOn: $preferences.confirmNoteDeletion)
+                Text("Deleted notes can be restored from Trash.")
+                    .font(.caption)
+                    .foregroundStyle(Color.quickNotesSecondaryText)
+            }
+
+            SettingsGroup("Updates") {
+                Toggle("Check for updates automatically", isOn: $preferences.automaticallyCheckForUpdates)
+                Text("Checks the public GitHub release once a day. Notes stay on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(Color.quickNotesSecondaryText)
+                HStack(spacing: 8) {
+                    Button("Check Now") { updateChecker.checkNow() }
+                        .disabled(updateChecker.isChecking)
+                    if updateChecker.isChecking {
+                        ProgressView().controlSize(.small)
+                    } else if let release = updateChecker.availableRelease {
+                        Button("Version \(release.version) is available") {
+                            updateChecker.openRelease()
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                    } else if let message = updateChecker.checkMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(Color.quickNotesSecondaryText)
+                    }
+                }
             }
 
             if let error = launchAtLogin.errorMessage {
@@ -273,6 +308,10 @@ struct SettingsView: View {
                 }
                 .accessibilityElement(children: .contain)
                 Toggle("Hide when focus is lost", isOn: $preferences.hideOnFocusLoss)
+                Toggle("Remember where I left each note", isOn: $preferences.rememberReadingPosition)
+                Text("Turn off to open notes at the top.")
+                    .font(.caption)
+                    .foregroundStyle(Color.quickNotesSecondaryText)
                 Toggle("Translucent collapsed bar", isOn: $preferences.translucentCollapsedBar)
                 Text("Pinned notes stay visible until you hide them explicitly.")
                     .font(.caption)

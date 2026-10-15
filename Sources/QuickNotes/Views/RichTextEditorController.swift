@@ -6,13 +6,16 @@ enum QuoteParagraphStyle {
 
     static func isQuoted(_ style: NSParagraphStyle?) -> Bool {
         guard let style else { return false }
+        if style.textBlocks.contains(where: { $0 is NSTextTableBlock }) {
+            return style.headIndent >= indent - 0.5 && style.firstLineHeadIndent >= indent - 0.5
+        }
         return !style.textBlocks.isEmpty
             || (style.headIndent >= indent - 0.5 && style.firstLineHeadIndent >= indent - 0.5)
     }
 
     static func updated(_ source: NSParagraphStyle?, quoted: Bool) -> NSMutableParagraphStyle {
         let style = source?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
-        style.textBlocks = []
+        style.textBlocks = style.textBlocks.filter { $0 is NSTextTableBlock }
         style.headIndent = quoted ? indent : 0
         style.firstLineHeadIndent = quoted ? indent : 0
         return style
@@ -24,13 +27,24 @@ enum QuoteParagraphStyle {
         let range = NSRange(location: 0, length: content.length)
         var repairs: [(NSRange, NSMutableParagraphStyle)] = []
         content.enumerateAttribute(.paragraphStyle, in: range) { value, subrange, _ in
-            guard let style = value as? NSParagraphStyle, !style.textBlocks.isEmpty else { return }
+            guard let style = value as? NSParagraphStyle, !style.textBlocks.isEmpty,
+                  !style.textBlocks.contains(where: { $0 is NSTextTableBlock }) else { return }
             repairs.append((subrange, updated(style, quoted: true)))
         }
         for (subrange, style) in repairs {
             content.addAttribute(.paragraphStyle, value: style, range: subrange)
         }
         return !repairs.isEmpty
+    }
+}
+
+enum ListPrefix {
+    static func visibleLine(_ line: String) -> String {
+        String(line.drop(while: { $0 == "\u{200B}" || $0 == "\u{FEFF}" }))
+    }
+
+    static func invisibleLength(in line: String) -> Int {
+        line.utf16.count - visibleLine(line).utf16.count
     }
 }
 
@@ -53,8 +67,12 @@ enum ListMarkerAppearance {
         guard source.length > 0, location <= source.length else { return }
         let safeLocation = min(location, source.length - 1)
         let paragraph = source.paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        if let style = content.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil)
+            as? NSParagraphStyle, style.textBlocks.contains(where: { $0 is NSTextTableBlock }) { return }
         guard paragraph.length >= 2 else { return }
-        let line = source.substring(with: paragraph)
+        let rawLine = source.substring(with: paragraph)
+        let line = ListPrefix.visibleLine(rawLine)
+        let leadingLength = ListPrefix.invisibleLength(in: rawLine)
         let markerLength: Int
         let markerFont: NSFont?
         let baselineOffset: CGFloat
@@ -78,8 +96,8 @@ enum ListMarkerAppearance {
             return
         }
 
-        let prefix = NSRange(location: paragraph.location, length: markerLength + 1)
-        let marker = NSRange(location: paragraph.location, length: markerLength)
+        let prefix = NSRange(location: paragraph.location, length: leadingLength + markerLength + 1)
+        let marker = NSRange(location: paragraph.location + leadingLength, length: markerLength)
         let bodyIndex = NSMaxRange(prefix)
         let bodyFont = bodyIndex < source.length
             && source.character(at: bodyIndex) != 10 && source.character(at: bodyIndex) != 13
@@ -156,7 +174,7 @@ enum ListMarkerAppearance {
         let source = content.string as NSString
         guard source.length > 0, location < source.length else { return }
         let paragraph = source.paragraphRange(for: NSRange(location: location, length: 0))
-        let line = source.substring(with: paragraph)
+        let line = ListPrefix.visibleLine(source.substring(with: paragraph))
         if line.hasPrefix("○ ") || line.hasPrefix("◉ ") || line.hasPrefix("• ")
             || line.hasPrefix("- ") || line.range(of: #"^\d+\. "#, options: .regularExpression) != nil {
             return
@@ -173,12 +191,29 @@ enum InlineFormatBoundary {
     static func normalize(in content: NSMutableAttributedString) {
         let source = content.string as NSString
         for index in 0..<source.length where source.character(at: index) == 10
-            || source.character(at: index) == 13 {
+            || source.character(at: index) == 11 || source.character(at: index) == 12
+            || source.character(at: index) == 13 || source.character(at: index) == 0x85
+            || source.character(at: index) == 0x2028
+            || source.character(at: index) == 0x2029 || source.character(at: index) == 0xFFFC
+            || source.character(at: index) == 0x200B || source.character(at: index) == 0xFEFF {
             let range = NSRange(location: index, length: 1)
             content.removeAttribute(.underlineStyle, range: range)
             content.removeAttribute(.underlineColor, range: range)
             content.removeAttribute(.strikethroughStyle, range: range)
+            content.removeAttribute(.strikethroughColor, range: range)
             content.removeAttribute(.backgroundColor, range: range)
+            content.removeAttribute(.link, range: range)
+            if source.character(at: index) == 0xFFFC {
+                content.removeAttribute(.baselineOffset, range: range)
+            }
+        }
+        content.enumerateAttributes(in: NSRange(location: 0, length: content.length)) { attributes, range, _ in
+            if (attributes[.underlineStyle] as? Int ?? 0) == 0 {
+                content.removeAttribute(.underlineColor, range: range)
+            }
+            if (attributes[.strikethroughStyle] as? Int ?? 0) == 0 {
+                content.removeAttribute(.strikethroughColor, range: range)
+            }
         }
     }
 }
@@ -233,6 +268,44 @@ final class RichTextEditorController: ObservableObject {
         var textStyle: TextStyle?
         var listStyle: ListStyle?
         var alignment: NSTextAlignment? = .left
+        var textColor: TextColor? = .automatic
+        var inTable = false
+        var canConvertToTable = false
+    }
+
+    enum TextColor: String, CaseIterable, Identifiable {
+        case automatic = "Automatic", red = "Red", orange = "Orange", green = "Green"
+        case blue = "Blue", purple = "Purple"
+        var id: String { rawValue }
+        var nsColor: NSColor {
+            self == .automatic ? .labelColor : Self.palette[rawValue] ?? .labelColor
+        }
+        private static let palette: [String: NSColor] = [
+            "Red": adaptive("Red", light: [0.72, 0.12, 0.17], dark: [1, 0.48, 0.48]),
+            "Orange": adaptive("Orange", light: [0.62, 0.30, 0.04], dark: [1, 0.69, 0.32]),
+            "Green": adaptive("Green", light: [0.12, 0.44, 0.26], dark: [0.49, 0.83, 0.57]),
+            "Blue": adaptive("Blue", light: [0.10, 0.35, 0.75], dark: [0.48, 0.72, 1]),
+            "Purple": adaptive("Purple", light: [0.43, 0.22, 0.68], dark: [0.77, 0.63, 1])
+        ]
+        private static func adaptive(_ name: String, light: [CGFloat], dark: [CGFloat]) -> NSColor {
+            NSColor(name: NSColor.Name("QuickNotesText\(name)")) { appearance in
+                let values = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+                return NSColor(srgbRed: values[0], green: values[1], blue: values[2], alpha: 1)
+            }
+        }
+        func matches(_ color: NSColor?) -> Bool {
+            guard let color = color?.usingColorSpace(.deviceRGB) else { return false }
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                var candidate: NSColor?
+                NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+                    candidate = nsColor.usingColorSpace(.deviceRGB)
+                }
+                if let candidate, abs(color.redComponent - candidate.redComponent) < 0.03,
+                   abs(color.greenComponent - candidate.greenComponent) < 0.03,
+                   abs(color.blueComponent - candidate.blueComponent) < 0.03 { return true }
+            }
+            return false
+        }
     }
 
     @Published private(set) var formattingState = FormattingState()
@@ -267,6 +340,10 @@ final class RichTextEditorController: ObservableObject {
     }
 
     func noteSelectionChanged() {
+        if let event = NSApp.currentEvent, event.window === textView?.window,
+           [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown].contains(event.type) {
+            setSelectionPreviewMode(false)
+        }
         if pendingInsertionFontSize?.location != textView?.selectedRange().location {
             pendingInsertionFontSize = nil
         }
@@ -302,6 +379,15 @@ final class RichTextEditorController: ObservableObject {
         next.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
         next.highlight = attributes[.backgroundColor] != nil
         next.highlightColor = highlightColor(for: attributes[.backgroundColor] as? NSColor)
+        next.textColor = TextColor.allCases.first { $0.matches(attributes[.foregroundColor] as? NSColor) }
+        next.inTable = (attributes[.paragraphStyle] as? NSParagraphStyle)?
+            .textBlocks.contains(where: { $0 is NSTextTableBlock }) == true
+        if selectedRange.length > 0, selectedRange.length < 100_000 {
+            let selectedText = (textView.string as NSString).substring(with: selectedRange)
+            if selectedText.contains("\t") || selectedText.contains("|") {
+                next.canConvertToTable = NoteTable.fromDelimitedText(selectedText) != nil
+            }
+        }
 
         next.textStyle = textStyle(for: font)
         if selectedRange.length > 0 && contentRanges.isEmpty {
@@ -319,6 +405,9 @@ final class RichTextEditorController: ObservableObject {
                 next.underline = next.underline && (run[.underlineStyle] as? Int ?? 0) != 0
                 next.strikethrough = next.strikethrough && (run[.strikethroughStyle] as? Int ?? 0) != 0
                 next.highlight = next.highlight && run[.backgroundColor] != nil
+                if next.textColor != TextColor.allCases.first(where: { $0.matches(run[.foregroundColor] as? NSColor) }) {
+                    next.textColor = nil
+                }
                 if next.highlightColor != highlightColor(for: run[.backgroundColor] as? NSColor) {
                     next.highlightColor = nil
                 }
@@ -331,23 +420,32 @@ final class RichTextEditorController: ObservableObject {
             let paragraphs = lineRanges(in: source, selection: selectedRange)
             if let first = paragraphs.first {
                 next.listStyle = listStyle(in: source, storage: storage, paragraph: first)
-                next.alignment = (storage.attribute(.paragraphStyle, at: first.location, effectiveRange: nil)
-                    as? NSParagraphStyle)?.alignment ?? .left
+                next.alignment = effectiveAlignment(storage.attribute(.paragraphStyle,
+                    at: first.location, effectiveRange: nil) as? NSParagraphStyle, in: textView)
                 for paragraph in paragraphs.dropFirst() {
                     if next.listStyle != listStyle(in: source, storage: storage, paragraph: paragraph) {
                         next.listStyle = nil
                     }
-                    let alignment = (storage.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil)
-                        as? NSParagraphStyle)?.alignment ?? .left
+                    let alignment = effectiveAlignment(storage.attribute(.paragraphStyle,
+                        at: paragraph.location, effectiveRange: nil) as? NSParagraphStyle, in: textView)
                     if next.alignment != alignment { next.alignment = nil }
                 }
             }
         } else {
             let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle
-            next.alignment = paragraphStyle?.alignment ?? .left
+            next.alignment = effectiveAlignment(paragraphStyle, in: textView)
             if QuoteParagraphStyle.isQuoted(paragraphStyle) { next.listStyle = .blockQuote }
         }
         if formattingState != next { formattingState = next }
+    }
+
+    private func effectiveAlignment(_ style: NSParagraphStyle?, in textView: NSTextView) -> NSTextAlignment {
+        let alignment = style?.alignment ?? .left
+        guard alignment == .natural else { return alignment }
+        let direction = style?.baseWritingDirection ?? .natural
+        let rightToLeft = direction == .rightToLeft
+            || (direction == .natural && textView.baseWritingDirection == .rightToLeft)
+        return rightToLeft ? .right : .left
     }
 
     private func highlightColor(for color: NSColor?) -> HighlightColor? {
@@ -372,7 +470,12 @@ final class RichTextEditorController: ObservableObject {
                 contentStart += recognizedPrefixLength(in: line)
             }
             if contentStart < lineEnd {
-                result.append(NSRange(location: contentStart, length: lineEnd - contentStart))
+                var runStart = contentStart
+                for index in contentStart..<lineEnd where source.character(at: index) == 0xFFFC {
+                    if runStart < index { result.append(NSRange(location: runStart, length: index - runStart)) }
+                    runStart = index + 1
+                }
+                if runStart < lineEnd { result.append(NSRange(location: runStart, length: lineEnd - runStart)) }
             }
             if newline.location == NSNotFound { break }
             location = NSMaxRange(newline)
@@ -395,7 +498,7 @@ final class RichTextEditorController: ObservableObject {
         let paragraphStyle = storage.attribute(.paragraphStyle, at: paragraph.location,
                                                effectiveRange: nil) as? NSParagraphStyle
         if QuoteParagraphStyle.isQuoted(paragraphStyle) { return .blockQuote }
-        let line = source.substring(with: contentRange(for: paragraph, in: source))
+        let line = ListPrefix.visibleLine(source.substring(with: contentRange(for: paragraph, in: source)))
         if line.hasPrefix("○ ") || line.hasPrefix("◉ ") { return .checklist }
         if line.hasPrefix("• ") { return .bulleted }
         if line.hasPrefix("- ") { return .dashed }
@@ -475,7 +578,6 @@ final class RichTextEditorController: ObservableObject {
         if range.length == 0 {
             var attributes = textView.typingAttributes
             attributes[.font] = font
-            attributes[.foregroundColor] = NSColor.labelColor
             let existing = attributes[.paragraphStyle] as? NSParagraphStyle
             let paragraph = clearsQuoteIndent
                 ? QuoteParagraphStyle.updated(existing, quoted: false)
@@ -492,7 +594,6 @@ final class RichTextEditorController: ObservableObject {
         let before = NSAttributedString(attributedString: storage)
         storage.beginEditing()
         storage.addAttribute(.font, value: font, range: range)
-        storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
         storage.enumerateAttribute(.paragraphStyle, in: range) { value, subrange, _ in
             let existing = value as? NSParagraphStyle
             let paragraph = clearsQuoteIndent
@@ -511,6 +612,102 @@ final class RichTextEditorController: ObservableObject {
 
     func toggleItalic() {
         toggleFontTrait(.italicFontMask)
+    }
+
+    func applyTextColor(_ color: TextColor) {
+        guard let textView else { return }
+        if textView.selectedRange().length == 0 {
+            var attributes = textView.typingAttributes
+            attributes[.foregroundColor] = color.nsColor
+            textView.typingAttributes = attributes
+        } else if let storage = textView.textStorage {
+            let before = NSAttributedString(attributedString: storage)
+            storage.addAttribute(.foregroundColor, value: color.nsColor, range: textView.selectedRange())
+            registerFormattingUndo(before, in: textView, name: "Text Color")
+        }
+        refreshFormattingState()
+    }
+
+    func insertTable(rows: Int = 2, columns: Int = 2) {
+        guard let textView else { return }
+        let values = (0..<rows).map { _ in Array(repeating: "", count: columns) }
+        let content = NoteTable.make(rows: values)
+        let selection = textView.selectedRange()
+        let prefix = selection.location > 0
+            && (textView.string as NSString).character(at: selection.location - 1) != 10 ? "\n" : ""
+        let insertion = NSMutableAttributedString(string: prefix, attributes: NoteRichContent.bodyAttributes)
+        insertion.append(content)
+        textView.insertText(insertion, replacementRange: selection)
+        (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit(forceTableLayout: true)
+        textView.setSelectedRange(NSRange(location: selection.location + prefix.utf16.count, length: 0))
+        textView.typingAttributes = textView.textStorage?.attributes(
+            at: textView.selectedRange().location, effectiveRange: nil) ?? NoteRichContent.bodyAttributes
+        refreshFormattingState()
+    }
+
+    func convertSelectionToTable() {
+        guard let textView, textView.selectedRange().length > 0,
+              let table = NoteTable.fromDelimitedText(
+                (textView.string as NSString).substring(with: textView.selectedRange())) else { return }
+        textView.insertText(table, replacementRange: textView.selectedRange())
+        (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit(forceTableLayout: true)
+        refreshFormattingState()
+    }
+
+    func addTableRow() {
+        guard let textView, let storage = textView.textStorage,
+              let table = selectedTable() else { return }
+        var end = 0
+        var row = 0
+        storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            for case let block as NSTextTableBlock in style.textBlocks where block.table === table {
+                end = max(end, NSMaxRange(range))
+                row = max(row, block.startingRow + block.rowSpan)
+            }
+        }
+        let content = NSMutableAttributedString()
+        for column in 0..<table.numberOfColumns {
+            let block = NSTextTableBlock(table: table, startingRow: row, rowSpan: 1,
+                                        startingColumn: column, columnSpan: 1)
+            NoteTable.configure(block, header: false)
+            let style = NSMutableParagraphStyle()
+            style.textBlocks = [block]
+            var attributes = NoteRichContent.bodyAttributes
+            attributes[.paragraphStyle] = style
+            content.append(NSAttributedString(string: "\n", attributes: attributes))
+        }
+        textView.insertText(content, replacementRange: NSRange(location: end, length: 0))
+        (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit(forceTableLayout: true)
+        textView.setSelectedRange(NSRange(location: end, length: 0))
+        refreshFormattingState()
+    }
+
+    func tableToText() {
+        guard let textView, let storage = textView.textStorage, let table = selectedTable() else { return }
+        var start = storage.length
+        var end = 0
+        storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let source = value as? NSParagraphStyle,
+                  source.textBlocks.contains(where: { ($0 as? NSTextTableBlock)?.table === table }) else { return }
+            start = min(start, range.location)
+            end = max(end, NSMaxRange(range))
+        }
+        guard start < end else { return }
+        let range = NSRange(location: start, length: end - start)
+        let content = NoteRichContent.tableContents(storage.attributedSubstring(from: range))
+        textView.insertText(content, replacementRange: range)
+        textView.typingAttributes = NoteRichContent.bodyAttributes
+        (textView as? EscapeAwareTextView)?.resizeAttachmentsToFit(forceTableLayout: true)
+        textView.undoManager?.setActionName("Convert Table to Text")
+        refreshFormattingState()
+    }
+
+    private func selectedTable() -> NSTextTable? {
+        guard let textView, let storage = textView.textStorage, storage.length > 0,
+              let style = storage.attribute(.paragraphStyle, at: min(textView.selectedRange().location,
+                    storage.length - 1), effectiveRange: nil) as? NSParagraphStyle else { return nil }
+        return style.textBlocks.compactMap { $0 as? NSTextTableBlock }.last?.table
     }
 
     func toggleUnderline() {
@@ -559,6 +756,7 @@ final class RichTextEditorController: ObservableObject {
             }
         }
         storage.endEditing()
+        refreshHighlightDisplay(in: textView)
         registerFormattingUndo(before, in: textView, name: "Highlight")
     }
 
@@ -610,16 +808,26 @@ final class RichTextEditorController: ObservableObject {
             }
         }
         storage.endEditing()
+        refreshHighlightDisplay(in: textView)
         registerFormattingUndo(before, in: textView, name: "Highlight")
     }
 
+    private func refreshHighlightDisplay(in textView: NSTextView) {
+        guard let storage = textView.textStorage else { return }
+        InlineFormatBoundary.normalize(in: storage)
+        textView.needsDisplay = true
+    }
+
     private func colorsMatch(_ first: NSColor?, _ second: NSColor?) -> Bool {
-        guard let first, let second,
-              let a = first.usingColorSpace(.deviceRGB),
-              let b = second.usingColorSpace(.deviceRGB) else { return false }
-        return abs(a.redComponent - b.redComponent) < 0.03
-            && abs(a.greenComponent - b.greenComponent) < 0.03
-            && abs(a.blueComponent - b.blueComponent) < 0.03
+        guard let a = first?.usingColorSpace(.deviceRGB), let second else { return false }
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            var b: NSColor?
+            NSAppearance(named: name)?.performAsCurrentDrawingAppearance { b = second.usingColorSpace(.deviceRGB) }
+            if let b, abs(a.redComponent - b.redComponent) < 0.03,
+               abs(a.greenComponent - b.greenComponent) < 0.03,
+               abs(a.blueComponent - b.blueComponent) < 0.03 { return true }
+        }
+        return false
     }
 
     func applyList(_ style: ListStyle) {
@@ -925,6 +1133,13 @@ final class RichTextEditorController: ObservableObject {
 
         let before = NSAttributedString(attributedString: storage)
         var attachments: [(NSRange, NSTextAttachment)] = []
+        var tableParagraphs: [(NSRange, NSParagraphStyle)] = []
+        storage.enumerateAttribute(.paragraphStyle, in: paragraphRange(in: textView)) { value, subrange, _ in
+            if let style = value as? NSParagraphStyle,
+               style.textBlocks.contains(where: { $0 is NSTextTableBlock }) {
+                tableParagraphs.append((subrange, style))
+            }
+        }
         storage.enumerateAttribute(.attachment, in: range) { value, subrange, _ in
             if let attachment = value as? NSTextAttachment {
                 attachments.append((subrange, attachment))
@@ -938,6 +1153,9 @@ final class RichTextEditorController: ObservableObject {
         let paragraphs = paragraphRange(in: textView)
         if paragraphs.length > 0 {
             storage.addAttribute(.paragraphStyle, value: NSParagraphStyle.default, range: paragraphs)
+        }
+        for (subrange, style) in tableParagraphs {
+            storage.addAttribute(.paragraphStyle, value: style, range: subrange)
         }
         storage.endEditing()
         registerFormattingUndo(before, in: textView, name: "Clear Formatting")
@@ -1087,13 +1305,14 @@ final class RichTextEditorController: ObservableObject {
     private func nextNumberedIndex(before location: Int, in source: NSString) -> Int {
         guard location > 0 else { return 0 }
         let previous = source.paragraphRange(for: NSRange(location: location - 1, length: 0))
-        let line = source.substring(with: contentRange(for: previous, in: source))
+        let line = ListPrefix.visibleLine(source.substring(with: contentRange(for: previous, in: source)))
         guard let marker = line.range(of: #"^\d+\. "#, options: .regularExpression),
               let number = Int(line[marker].dropLast(2)) else { return 0 }
         return number
     }
 
     private func hasPrefix(for style: ListStyle, in line: String) -> Bool {
+        let line = ListPrefix.visibleLine(line)
         switch style {
         case .bulleted: return line.hasPrefix("• ")
         case .dashed: return line.hasPrefix("- ")
@@ -1104,12 +1323,13 @@ final class RichTextEditorController: ObservableObject {
         }
     }
 
-    private func recognizedPrefixLength(in line: String) -> Int {
+    private func recognizedPrefixLength(in rawLine: String) -> Int {
+        let line = ListPrefix.visibleLine(rawLine)
         guard let range = line.range(
             of: #"^(?:• |- |\d+\. |○ |◉ |☐ |☑ |> )"#,
             options: .regularExpression
         ) else { return 0 }
-        return line[range].utf16.count
+        return ListPrefix.invisibleLength(in: rawLine) + line[range].utf16.count
     }
 
 }

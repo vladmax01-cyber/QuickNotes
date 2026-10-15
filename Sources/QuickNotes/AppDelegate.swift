@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import QuickNotesCore
 
 private struct LocalKeyEvent: Sendable {
@@ -18,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: QuickNotePanelController!
     private var settingsController: SettingsWindowController!
     private var menuBarController: MenuBarController!
+    private var updateChecker: UpdateChecker!
+    private var updateSubscriptions = Set<AnyCancellable>()
+    private var updateTimer: Timer?
     private var registeredShortcut: ShortcutDefinition?
     private var localEventMonitor: Any?
     private var preferencesObserver: NSObjectProtocol?
@@ -35,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store = NotesStore(repository: NotesRepository(fileURL: notesFileURL()), defaults: defaults)
         editorController = RichTextEditorController()
         hotKeyService = GlobalHotKeyService()
+        updateChecker = UpdateChecker(defaults: defaults)
 
         installMainMenu()
         configureApplicationIcon()
@@ -44,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences: preferences,
             viewModel: viewModel,
             editorController: editorController,
+            updateChecker: updateChecker,
             defaults: defaults,
             onNewNote: { [weak self] in self?.createNewNote() },
             onDuplicateNote: { [weak self] id in self?.duplicateNote(id) },
@@ -58,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             launchAtLogin: launchAtLogin,
             viewModel: viewModel,
             store: store,
+            updateChecker: updateChecker,
             onShortcutRecordingChanged: { [weak self] isRecording in
                 self?.setShortcutRecording(isRecording)
             },
@@ -69,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
-        menuBarController = MenuBarController(store: store)
+        menuBarController = MenuBarController(store: store, updateChecker: updateChecker)
         menuBarController.isQuickNoteVisible = { [weak self] in
             self?.panelController.isPresented ?? false
         }
@@ -79,10 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController.onRequestDeleteNote = { [weak self] id in self?.requestDeleteNote(id) }
         menuBarController.onOpenSettings = { [weak self] in self?.openSettings() }
         menuBarController.onQuit = { NSApp.terminate(nil) }
+        updateChecker.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.menuBarController?.refresh() }
+        }.store(in: &updateSubscriptions)
 
         panelController.shouldSuppressFocusLoss = { [weak self] in
             guard let self else { return false }
             return self.settingsController.isPresented
+                || NoteExport.isPresenting
                 || self.menuBarController.isTrackingMenu
                 || self.viewModel.pendingDeletionID != nil
         }
@@ -91,6 +102,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyPreferences()
         applyShortcut(preferences.shortcut, persist: false)
         installLocalKeyboardHandling()
+        if preferences.automaticallyCheckForUpdates {
+            updateChecker.checkIfNeeded()
+        }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.preferences.automaticallyCheckForUpdates else { return }
+                self.updateChecker.checkIfNeeded()
+            }
+        }
 
         if preferences.openAtStartup {
             panelController.show()
@@ -101,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (editorController?.textView as? EscapeAwareTextView)?.commitPendingChanges?()
         store?.flush()
         hotKeyService?.unregister()
+        updateTimer?.invalidate()
         if let localEventMonitor {
             NSEvent.removeMonitor(localEventMonitor)
         }
@@ -212,6 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func requestDeleteNote(_ id: UUID) {
         guard store.notes.contains(where: { $0.id == id }) else { return }
+        guard preferences.confirmNoteDeletion else {
+            deleteNote(id)
+            return
+        }
         show(noteID: id)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.store.notes.contains(where: { $0.id == id }) else { return }
@@ -347,7 +372,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleLocalKeyDown(_ event: LocalKeyEvent) -> Bool {
-        if settingsController.isRecordingShortcut {
+        if event.keyCode == 53, panelController.dismissTrackedMenus() { return true }
+        if settingsController.isRecordingShortcut || NoteExport.isPresenting
+            || panelController.isTrackingMenu || NSApp.modalWindow != nil
+            || NSApp.keyWindow?.sheetParent != nil
+            || (NSApp.keyWindow != nil && NSApp.keyWindow === settingsController.window) {
             return false
         }
         let modifiers = NSEvent.ModifierFlags(rawValue: event.modifierRawValue)
@@ -361,13 +390,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        if event.keyCode == 53, panelController.isPresented {
+        if event.keyCode == 53 {
+            if viewModel.isFormatPaletteVisible {
+                viewModel.isFormatPaletteVisible = false
+                return true
+            }
             if viewModel.isSearchVisible {
                 viewModel.closeSearch()
-            } else {
-                closeQuickNote()
+                return true
             }
-            return true
+            return false
         }
 
         if modifiers.contains(.command) {
